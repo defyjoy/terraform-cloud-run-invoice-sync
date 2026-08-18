@@ -99,13 +99,18 @@ Rules for working on this repo's Terraform. These override default behavior.
   `repositories.create`/`.delete` at all (it's content/IAM management on a repo that already
   exists), and `.writer` only grants push/pull. Don't reach for either when the caller is the
   one provisioning the repo.
-- A `create` call for a resource that doesn't exist yet is authorized against the *parent*
-  (its location, in `run_admin_scoped`/`artifactregistry_admin_scoped`'s case), not the
-  resource's own `resource.name` — confirmed by a real 403
-  (`artifactregistry.repositories.create` denied on `.../locations/<region>`, not the repo)
-  when the condition only matched the child resource. A single `resource.name == <child>` check
-  is not enough to let the deploy SA provision the resource in the first place; the condition
-  needs an `||` branch matching the parent location too, and the second branch stays needed
-  afterward for every non-create call, which does check the child's own `resource.name`. Same
-  class of gap as `services.list` above — don't assume a resource-scoped condition covers
-  creation just because it covers everything else.
+- A `create` call for a resource that doesn't exist yet is generally authorized against the
+  *parent* (its location), not the resource's own `resource.name` — a single
+  `resource.name == <child>` check is not enough to let the deploy SA provision the resource in
+  the first place; where a service's IAM Conditions do support `resource.name` (Cloud Run does —
+  see `run_admin_scoped`), the condition needs an `||` branch matching the parent location too,
+  and the second branch stays needed afterward for every non-create call, which does check the
+  child's own `resource.name`. Same class of gap as `services.list` above.
+- Artifact Registry has no `resource.name`/`resource.type`-based IAM Conditions at all — its only
+  documented conditional-access mechanism is Resource Manager tags, a different feature. A
+  `resource.name`-scoped condition on `artifactregistry_admin` looked like it matched (the 403's
+  own error detail showed the exact resource name the condition checked for) and still denied
+  every request, because the condition attribute isn't evaluated for this resource type in the
+  first place — confirmed against Google's Artifact Registry access-control docs, not assumed.
+  `artifactregistry_admin` is granted project-wide, unconditioned, for this reason — don't
+  reintroduce a `resource.name` condition on it expecting it to narrow anything.

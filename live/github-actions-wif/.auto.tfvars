@@ -10,4 +10,3 @@ state_bucket = "yeti-terraform-state-bucket"
 deploy_account_id = "github-deployer"
 
 cloud_run_service_name = "invoice-sync"
-artifact_registry_repo = "invoice-sync"

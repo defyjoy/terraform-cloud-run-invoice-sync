@@ -29,16 +29,11 @@ variable "deploy_account_id" {
 }
 
 variable "region" {
-  description = "Region ../invoice-sync creates its Cloud Run service and Artifact Registry repo in. Must match that stack's own region."
+  description = "Region ../invoice-sync creates its Cloud Run service in. Must match that stack's own region."
   type        = string
 }
 
 variable "cloud_run_service_name" {
   description = "Name of ../invoice-sync's Cloud Run service. Must match that stack's own service_name — scopes the deploy SA's roles/run.admin grant to just this service."
-  type        = string
-}
-
-variable "artifact_registry_repo" {
-  description = "ID of ../invoice-sync's Artifact Registry repo (created by ../artifact-registry). Must match both those stacks' own artifact_registry_repo/repository_id — scopes the deploy SA's roles/artifactregistry.repoAdmin grant to just this repo."
   type        = string
 }

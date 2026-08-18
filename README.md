@@ -48,9 +48,11 @@ push → `invoice-sync` (apply). `artifact-registry` runs every time — it's id
 once the repo exists — so a deleted repo self-heals on the next push without a separate manual
 step.
 
-This means the deploy SA needs one grant broader than a single named resource:
-`roles/artifactregistry.repoAdmin` (not `.writer`) on the invoice-sync repo, since creating and
-deleting a repo needs `repositories.create`/`.delete`, which `.writer` doesn't grant.
+This means the deploy SA needs `roles/artifactregistry.admin` (not `.repoAdmin`/`.writer`,
+neither of which grant `repositories.create`/`.delete`), and unlike every other grant in this
+repo, it's project-wide rather than scoped to the one repo — Artifact Registry has no
+`resource.name`-based IAM Conditions at all, only Resource Manager tags, a different mechanism.
+See CLAUDE.md's IAM section.
 
 `enable-apis` is deliberately kept local-only, unlike `artifact-registry` — see CLAUDE.md's IAM
 section for why `roles/serviceusage.*` doesn't scope down the same way.

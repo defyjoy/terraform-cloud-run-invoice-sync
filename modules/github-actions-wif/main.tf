@@ -56,23 +56,13 @@ resource "google_project_iam_member" "run_admin_scoped" {
   }
 }
 
-resource "google_project_iam_member" "artifactregistry_admin_scoped" {
+# Project-wide, unconditioned — see CLAUDE.md's IAM section: Artifact Registry has no
+# resource.name-based IAM Conditions at all, confirmed by a real 403 persisting even when
+# resource.name matched exactly what the error itself reported.
+resource "google_project_iam_member" "artifactregistry_admin" {
   project = var.project_id
   role    = "roles/artifactregistry.admin"
   member  = module.deploy_service_account.iam_email
-
-  # Matches the parent location too, not just the repo name — see CLAUDE.md's IAM section on
-  # why create calls need that, and why this role is .admin rather than .repoAdmin.
-  condition {
-    title       = "${var.artifact_registry_repo}-only"
-    description = "Restricts roles/artifactregistry.admin to the ${var.artifact_registry_repo} Artifact Registry repo only."
-    expression  = <<-EOT
-      resource.type == "artifactregistry.googleapis.com/Repository" && (
-        resource.name == "projects/${var.project_id}/locations/${var.region}" ||
-        resource.name == "projects/${var.project_id}/locations/${var.region}/repositories/${var.artifact_registry_repo}"
-      )
-    EOT
-  }
 }
 
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —

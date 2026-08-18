@@ -36,17 +36,12 @@ variable "deploy_account_id" {
 }
 
 variable "region" {
-  description = "Region cloud_run_service_name and artifact_registry_repo live in, used to build the resource names the run.admin/artifactregistry.writer IAM Conditions scope to."
+  description = "Region cloud_run_service_name lives in, used to build the resource name the run.admin IAM Condition scopes to."
   type        = string
 }
 
 variable "cloud_run_service_name" {
   description = "Name of the Cloud Run service roles/run.admin is scoped to via an IAM Condition. Doesn't need to exist yet — the condition matches on name, not on the resource's existence."
-  type        = string
-}
-
-variable "artifact_registry_repo" {
-  description = "ID of the Artifact Registry repo roles/artifactregistry.repoAdmin is scoped to via an IAM Condition. Doesn't need to exist yet — the condition matches on name, not on the resource's existence."
   type        = string
 }
 
