@@ -1,3 +1,7 @@
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = var.pool_id
@@ -71,7 +75,7 @@ resource "google_project_iam_member" "serviceusage_admin_scoped" {
     description = "Restricts roles/serviceusage.serviceUsageAdmin to the services ../enable-apis declares."
     expression = format(
       "resource.type == \"serviceusage.googleapis.com/Service\" && resource.name in [%s]",
-      join(", ", [for service in var.enable_apis_services : "\"projects/${var.project_id}/services/${service}\""]),
+      join(", ", [for service in var.enable_apis_services : "\"projects/${data.google_project.this.number}/services/${service}\""]),
     )
   }
 }
