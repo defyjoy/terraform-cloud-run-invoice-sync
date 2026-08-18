@@ -1,0 +1,37 @@
+# CLAUDE.md
+
+Rules for working on this repo's Terraform. These override default behavior.
+
+## Networking
+
+- VPCs and everything on them are private by default. The only thing ever exposed publicly is
+  the load balancer in front of Cloud Run (`modules/serverless-lb`) — no public IPs, no
+  `INGRESS_TRAFFIC_ALL` on Cloud Run, no public Cloud SQL, no `0.0.0.0/0` ingress firewall
+  rules, unless the user explicitly asks for an exception and understands what it opens up.
+
+## Taskfile
+
+- Every root Terraform module under `live/` gets a task in `Taskfile.yml` using the existing
+  `_tf` pattern (`init` with `-backend-config bucket=`/`prefix=`, then `plan`/`apply`/`destroy`
+  via `ACTION`). Don't hand-roll `terraform` invocations elsewhere (docs, scripts) when a task
+  should exist instead.
+
+## CI/CD
+
+- Every pipeline authenticates to GCP with Workload Identity Federation
+  (`google-github-actions/auth@v2` + `modules/github-actions-wif`), scoped to the specific
+  GitHub repo via `attribute_condition`. Never a service account key file, never a broad WIF
+  pool without a repo-scoped condition.
+
+## IAM
+
+- Principle of least privilege, always: prefer the narrowest role that does the job
+  (resource-level binding over project-level, a custom/predefined role over `roles/editor` or
+  `roles/owner`) and grant it only to the specific service account or member that needs it.
+  Default to project-scoped IAM only when the resource doesn't support a narrower binding.
+- Before granting anything that reads as a privilege escalation — `roles/owner`/`roles/editor`,
+  `roles/iam.securityAdmin`, broad `serviceAccountTokenCreator`/`serviceAccountUser` on many
+  accounts, project-wide instead of resource-scoped bindings, wildcard WIF attribute
+  conditions, service account key file creation — stop and ask the user why it's needed instead
+  of just applying it. Propose the narrower alternative that would satisfy the actual use case
+  first.
