@@ -58,28 +58,16 @@ module "lb" {
   cloud_run_service_name = module.cloud_run.service_name
 }
 
-module "github_wif" {
-  source = "../../modules/github-actions-wif"
-
-  project_id   = var.project_id
-  github_owner = var.github_owner
-  github_repo  = var.github_repo
-}
+# The deploy service account itself lives in ../github-actions-wif's own state — it has to
+# exist before this stack's pipeline can even authenticate, so it's applied by hand once,
+# ahead of everything here. var.deploy_service_account_email comes from that stack's output.
 
 # Lets the deploy service account act as the Cloud Run runtime service account when deploying
 # new revisions, without granting it broader iam.serviceAccountUser on the whole project.
 resource "google_service_account_iam_member" "deploy_can_act_as_runtime" {
   service_account_id = module.cloud_run.service_account_id
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${module.github_wif.service_account_email}"
-}
-
-# The pipeline runs terraform init/apply itself, so its deploy service account needs write
-# access to the shared state bucket (owned by the google-cloud-terraform repo, not this one).
-resource "google_storage_bucket_iam_member" "deploy_can_write_state" {
-  bucket = var.state_bucket
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${module.github_wif.service_account_email}"
+  member             = "serviceAccount:${var.deploy_service_account_email}"
 }
 
 module "deployment_alert" {

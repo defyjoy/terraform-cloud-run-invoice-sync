@@ -12,50 +12,62 @@ modules/
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
 └── serverless-lb/            copied from defyjoy/google-cloud-terraform, unchanged
 live/
-└── invoice-sync/    the service, Artifact Registry repo, load balancer, WIF, and failure alerting
+├── github-actions-wif/  the deploy identity — its own state, applied by hand once (bootstrap)
+└── invoice-sync/        the service, Artifact Registry repo, load balancer, and failure
+                          alerting — applied by the pipeline from then on
 .github/
 └── workflows/
     └── deploy.yml    build image -> push -> terraform apply -var image_tag=<sha>
 ```
 
-State is stored at `gs://yeti-terraform-state-bucket/yeti-504903/live/invoice-sync`.
+Each root module holds separate state:
+`gs://yeti-terraform-state-bucket/yeti-504903/live/<github-actions-wif|invoice-sync>`. They're
+split because `github-actions-wif` has to exist before the pipeline can authenticate at all —
+if it lived in the same state as the service, the very first apply of *everything* would have
+to run locally. Splitting it keeps that manual step to the smallest possible slice, and lets
+`invoice-sync` be applied via GitHub only, per this repo's `CLAUDE.md`.
 
 ## Usage
 
 ```bash
 task                             # list tasks
-task invoice-sync                # init + plan
+task github-actions-wif          # init + plan the deploy identity (bootstrap only)
+task invoice-sync                # init + plan the service (normally the pipeline's job)
 ACTION=apply task invoice-sync   # init + apply
 ```
 
-`image_tag` has no default and must always be passed explicitly:
+`invoice-sync`'s `image_tag` has no default and must always be passed explicitly:
 
 ```bash
 task invoice-sync -- -var image_tag=<git-sha>
 ```
 
-## Bootstrap: first apply must run locally
+## Bootstrap: `github-actions-wif` must be applied locally, once
 
-The GitHub Actions pipeline authenticates via Workload Identity Federation, but the WIF
-pool/provider/deploy-service-account are themselves created by this Terraform — they can't
-exist before the first apply, and the pipeline can't authenticate before they exist. So:
+The GitHub Actions pipeline authenticates via Workload Identity Federation, but the pool,
+provider and deploy service account it authenticates as are themselves Terraform-managed — they
+can't exist before the first apply, and the pipeline can't authenticate before they exist. So,
+before the pipeline can deploy anything:
 
-1. Run the first apply locally, with your own `gcloud` credentials:
+1. Apply `github-actions-wif` locally, with your own `gcloud` credentials:
    ```bash
-   ACTION=apply task invoice-sync -- -var image_tag=bootstrap
+   ACTION=apply task github-actions-wif
    ```
-   (`bootstrap` is a placeholder tag — nothing needs to exist at that tag yet for the WIF/IAM
-   resources to be created; the Cloud Run revision itself will fail to pull it, which is fine
-   for this one-time step.)
-2. Read the outputs:
+   This is the *only* stack meant to be applied outside the pipeline — it never needs an image
+   tag or a running Cloud Run service, so there's no bootstrap placeholder value needed anywhere.
+2. Read its outputs:
    ```bash
-   terraform -chdir=live/invoice-sync output -raw workload_identity_provider
-   terraform -chdir=live/invoice-sync output -raw deploy_service_account_email
+   terraform -chdir=live/github-actions-wif output -raw workload_identity_provider
+   terraform -chdir=live/github-actions-wif output -raw service_account_email
    ```
 3. Set them as GitHub repo variables (Settings → Secrets and variables → Actions → Variables):
    `WIF_PROVIDER` and `DEPLOY_SA_EMAIL`.
-4. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy the
-   image, tagging every revision with the commit SHA.
+4. `service_account_email` is also `deploy_service_account_email` in
+   `live/invoice-sync/.auto.tfvars` — it's already filled in there with the deterministic value
+   (`github-deployer@yeti-504903.iam.gserviceaccount.com`), so no copy-paste is needed unless
+   `deploy_account_id` was overridden.
+5. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy
+   `invoice-sync` end to end — no further local applies required.
 
 ## Deployment failure alerting
 

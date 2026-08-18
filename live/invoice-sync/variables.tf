@@ -56,25 +56,14 @@ variable "image_tag" {
   type        = string
 }
 
-variable "github_owner" {
-  description = "GitHub org or user that owns the repo allowed to deploy via Workload Identity Federation."
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repo (without owner) allowed to deploy via Workload Identity Federation."
+variable "deploy_service_account_email" {
+  description = "Email of the GitHub Actions deploy service account, from ../github-actions-wif's service_account_email output. That stack must be applied first."
   type        = string
 }
 
 variable "notification_email" {
   description = "Address notified when a Cloud Run revision fails to become ready."
   type        = string
-}
-
-variable "state_bucket" {
-  description = "GCS bucket holding this stack's Terraform state. Must match Taskfile's STATE_BUCKET — the deploy service account is granted write access to it so the pipeline can run terraform apply."
-  type        = string
-  default     = "yeti-terraform-state-bucket"
 }
 
 variable "min_instance_count" {

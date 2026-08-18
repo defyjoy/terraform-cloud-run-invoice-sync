@@ -15,8 +15,14 @@ tasks:
     cmds:
       - task --list
 
+  github-actions-wif:
+    desc: 'GitHub Actions deploy identity (WIF pool/provider/service account) — bootstrap only, apply this locally before the pipeline can run anything else (ACTION=plan|apply|destroy, default plan)'
+    cmds:
+      - task: _tf
+        vars: { DIR: '{{.ROOT}}/github-actions-wif' }
+
   invoice-sync:
-    desc: 'invoice-sync Cloud Run service, deploy WIF and failure alerting (ACTION=plan|apply|destroy, default plan)'
+    desc: 'invoice-sync Cloud Run service, load balancer and failure alerting — normally applied by the pipeline, not locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
       - task: _tf
         vars: { DIR: '{{.ROOT}}/invoice-sync' }
@@ -27,9 +33,13 @@ tasks:
       - terraform fmt -recursive .
 
   validate:
-    desc: Validate the root module
+    desc: Validate every root module
     cmds:
-      - terraform -chdir={{.ROOT}}/invoice-sync validate
+      - |
+        for component in github-actions-wif invoice-sync; do
+          echo "==> $component"
+          terraform -chdir={{.ROOT}}/$component validate
+        done
 
   _tf:
     internal: true

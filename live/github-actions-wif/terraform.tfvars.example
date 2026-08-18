@@ -1,0 +1,7 @@
+# Reference only — real values live in .auto.tfvars, not this file.
+
+github_owner = "defyjoy"
+github_repo  = "terraform-cloud-run-invoice-sync"
+
+# project_id   = "yeti-504903"
+# state_bucket = "yeti-terraform-state-bucket"

@@ -22,9 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # WIF_PROVIDER and DEPLOY_SA_EMAIL come from this stack's own outputs. They can't exist
-      # before the pool/provider/service account do, so the very first apply has to run locally
-      # (task invoice-sync ACTION=apply) — see README for the bootstrap steps.
+      # WIF_PROVIDER and DEPLOY_SA_EMAIL come from live/github-actions-wif's outputs, a
+      # separate stack applied by hand once before this pipeline can run at all — see README.
       - id: auth
         uses: google-github-actions/auth@v2
         with:
