@@ -155,7 +155,9 @@ Rules for working on this repo's Terraform. These override default behavior.
   was an explicit, discussed trade-off — the alternative (granting the deploy SA
   `projectIamAdmin` + `iam.serviceAccountAdmin`) was rejected as too large a blast radius on a
   shared project. `live/invoice-sync` only ever references the runtime SA by its deterministic
-  email (`create_service_account = false`), never creates or grants it anything itself.
+  email (`create_service_account = false`), never creates or grants it anything itself. It does
+  still need `roles/iam.serviceAccountViewer` (`service_account_viewer`) to read that
+  externally-created SA — read-only, get/list/getIamPolicy, no write permissions.
 - `roles/pubsub.editor` (`modules/github-actions-wif`'s `pubsub_editor`), for
   `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
   `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not

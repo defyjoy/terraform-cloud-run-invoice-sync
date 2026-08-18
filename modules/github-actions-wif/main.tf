@@ -88,6 +88,14 @@ locals {
       role      = "roles/pubsub.editor"
       condition = null
     }
+
+    # Needed to read the externally-created Cloud Run runtime SA (create_service_account =
+    # false in ../invoice-sync) — .serviceAccountViewer grants get/list/getIamPolicy only, no
+    # write permissions, the narrowest predefined role with iam.serviceAccounts.get.
+    service_account_viewer = {
+      role      = "roles/iam.serviceAccountViewer"
+      condition = null
+    }
   }
 }
 
