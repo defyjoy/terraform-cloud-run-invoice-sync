@@ -96,5 +96,7 @@ VPN-only instead.
 
 ## App source
 
-This repo holds only infrastructure. `deploy.yml` expects a `Dockerfile` at the repo root
-building the invoice-sync service — add the application source separately.
+`app/` is a placeholder Node.js "Hello, World!" server (`GET /` and `GET /healthz`), just
+enough to prove the pipeline end to end — swap in the real invoice-sync service without
+touching the `Dockerfile`, as long as it keeps listening on `$PORT` (8080 by default, matching
+`modules/cloud-run`'s `port` var).
