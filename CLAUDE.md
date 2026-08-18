@@ -16,6 +16,17 @@ Rules for working on this repo's Terraform. These override default behavior.
   module that owns the concern it belongs to (or a new module, if none fits) and expose
   whatever variable/output makes it configurable from `live/`, rather than declaring it inline.
 
+## Variables
+
+- `live/*` root module variables have no `default`. Every value a stack actually runs with
+  lives in that stack's `.auto.tfvars`, which is the single source of truth — not a fallback
+  baked into `variables.tf`, and not injected via `-var` from the Taskfile or a pipeline
+  (`image_tag` is the one exception: it's a genuinely per-run value, not a stack config value,
+  so it's always passed with `-var` instead of living in a static file).
+  `terraform.tfvars.example` mirrors `.auto.tfvars` in full, since there's nothing to fall back
+  on if a value is missing. This is about `live/`, not the reusable modules under `modules/` —
+  those can keep sensible defaults (e.g. `modules/cloud-run`'s `cpu`, `memory`, `port`).
+
 ## Taskfile
 
 - Every root Terraform module under `live/` gets a task in `Taskfile.yml` using the existing
