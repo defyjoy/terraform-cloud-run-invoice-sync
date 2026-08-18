@@ -19,6 +19,7 @@ module "cloud_run" {
   service_account_project_roles = [
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
+    "roles/secretmanager.secretAccessor",
   ]
 
   min_instance_count = var.min_instance_count
