@@ -37,72 +37,111 @@ module "deploy_service_account" {
   display_name = "Deploys ${var.github_owner}/${var.github_repo} via GitHub Actions (WIF, no key file)"
 }
 
-resource "google_project_iam_member" "run_admin_scoped" {
-  project = var.project_id
-  role    = "roles/run.admin"
-  member  = module.deploy_service_account.iam_email
+locals {
+  # Every project-level role the deploy SA holds, keyed by the same names the old individual
+  # resources used (kept via the moved blocks below, so this refactor doesn't churn real IAM
+  # bindings). condition = null means unconditioned/project-wide; see CLAUDE.md's IAM section
+  # for why each unconditioned entry couldn't be scoped further.
+  deploy_sa_roles = {
+    run_admin_scoped = {
+      role = "roles/run.admin"
+      # Matches the parent location too, not just the service name — see CLAUDE.md's IAM
+      # section on why create calls need that.
+      condition = {
+        title       = "${var.cloud_run_service_name}-only"
+        description = "Restricts roles/run.admin to the ${var.cloud_run_service_name} Cloud Run service only."
+        expression  = <<-EOT
+          resource.type == "run.googleapis.com/Service" && (
+            resource.name == "projects/${var.project_id}/locations/${var.region}" ||
+            resource.name == "projects/${var.project_id}/locations/${var.region}/services/${var.cloud_run_service_name}"
+          )
+        EOT
+      }
+    }
 
-  # Matches the parent location too, not just the service name — see CLAUDE.md's IAM section on
-  # why create calls need that.
-  condition {
-    title       = "${var.cloud_run_service_name}-only"
-    description = "Restricts roles/run.admin to the ${var.cloud_run_service_name} Cloud Run service only."
-    expression  = <<-EOT
-      resource.type == "run.googleapis.com/Service" && (
-        resource.name == "projects/${var.project_id}/locations/${var.region}" ||
-        resource.name == "projects/${var.project_id}/locations/${var.region}/services/${var.cloud_run_service_name}"
-      )
-    EOT
+    # Artifact Registry has no resource.name-based IAM Conditions at all, confirmed by a real
+    # 403 persisting even when resource.name matched exactly what the error itself reported.
+    artifactregistry_admin = {
+      role      = "roles/artifactregistry.admin"
+      condition = null
+    }
+
+    # This project also hosts the google-cloud-terraform repo's hub/dev VPCs, so this grant
+    # lets the deploy SA touch that networking too, not just ../network's. Not scoped via IAM
+    # Conditions because Compute Engine's condition support isn't confirmed for
+    # networks/subnetworks/routers, and a condition that looks correct can silently never
+    # match (see artifactregistry_admin above) — not worth risking on infra with this much
+    # more to lose if guessed wrong.
+    compute_network_admin = {
+      role      = "roles/compute.networkAdmin"
+      condition = null
+    }
+
+    # compute.networkAdmin excludes firewall rules by design; ../network's allow_internal rule
+    # needs this separately.
+    compute_security_admin = {
+      role      = "roles/compute.securityAdmin"
+      condition = null
+    }
+
+    vpcaccess_admin = {
+      role      = "roles/vpcaccess.admin"
+      condition = null
+    }
+
+    # roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
+    # create_service_account = true (the Cloud Run runtime SA), and .serviceAccountCreator
+    # only grants create/get/list, not delete/update/setIamPolicy on every service account in
+    # the project.
+    service_account_creator = {
+      role      = "roles/iam.serviceAccountCreator"
+      condition = null
+    }
   }
 }
 
-# Project-wide, unconditioned — see CLAUDE.md's IAM section: Artifact Registry has no
-# resource.name-based IAM Conditions at all, confirmed by a real 403 persisting even when
-# resource.name matched exactly what the error itself reported.
-resource "google_project_iam_member" "artifactregistry_admin" {
+resource "google_project_iam_member" "deploy_sa_roles" {
+  for_each = local.deploy_sa_roles
+
   project = var.project_id
-  role    = "roles/artifactregistry.admin"
+  role    = each.value.role
   member  = module.deploy_service_account.iam_email
+
+  dynamic "condition" {
+    for_each = each.value.condition != null ? [each.value.condition] : []
+    content {
+      title       = condition.value.title
+      description = condition.value.description
+      expression  = condition.value.expression
+    }
+  }
 }
 
-# Project-wide, unconditioned — a deliberate, discussed exception (see CLAUDE.md's IAM
-# section), not a default. This project also hosts the google-cloud-terraform repo's hub/dev
-# VPCs, so this grant lets the deploy SA touch that networking too, not just ../network's. Not
-# scoped via IAM Conditions because Compute Engine's condition support isn't confirmed for
-# networks/subnetworks/routers, and this session already spent a long time discovering that a
-# condition which looks correct can silently never match (see the artifactregistry_admin
-# comment above) — an untested condition here risks the same failure mode on infra with a much
-# larger blast radius if guessed wrong.
-resource "google_project_iam_member" "compute_network_admin" {
-  project = var.project_id
-  role    = "roles/compute.networkAdmin"
-  member  = module.deploy_service_account.iam_email
+# Preserves the pre-refactor resource addresses' real IAM bindings instead of destroying and
+# recreating each one under the new for_each key.
+moved {
+  from = google_project_iam_member.run_admin_scoped
+  to   = google_project_iam_member.deploy_sa_roles["run_admin_scoped"]
 }
-
-# compute.networkAdmin excludes firewall rules by design; ../network's allow_internal rule
-# needs this separately.
-resource "google_project_iam_member" "compute_security_admin" {
-  project = var.project_id
-  role    = "roles/compute.securityAdmin"
-  member  = module.deploy_service_account.iam_email
+moved {
+  from = google_project_iam_member.artifactregistry_admin
+  to   = google_project_iam_member.deploy_sa_roles["artifactregistry_admin"]
 }
-
-resource "google_project_iam_member" "vpcaccess_admin" {
-  project = var.project_id
-  role    = "roles/vpcaccess.admin"
-  member  = module.deploy_service_account.iam_email
+moved {
+  from = google_project_iam_member.compute_network_admin
+  to   = google_project_iam_member.deploy_sa_roles["compute_network_admin"]
 }
-
-# roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
-# create_service_account = true (the Cloud Run runtime SA), and .serviceAccountCreator only
-# grants create/get/list, not delete/update/setIamPolicy on every service account in the
-# project — narrower than the admin role while still covering the one permission actually
-# needed. Project-wide and unconditioned for the same reason as the compute grants above:
-# account creation is authorized against the project, not a not-yet-existing account name.
-resource "google_project_iam_member" "service_account_creator" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountCreator"
-  member  = module.deploy_service_account.iam_email
+moved {
+  from = google_project_iam_member.compute_security_admin
+  to   = google_project_iam_member.deploy_sa_roles["compute_security_admin"]
+}
+moved {
+  from = google_project_iam_member.vpcaccess_admin
+  to   = google_project_iam_member.deploy_sa_roles["vpcaccess_admin"]
+}
+moved {
+  from = google_project_iam_member.service_account_creator
+  to   = google_project_iam_member.deploy_sa_roles["service_account_creator"]
 }
 
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
