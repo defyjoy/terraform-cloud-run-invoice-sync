@@ -77,13 +77,14 @@ Rules for working on this repo's Terraform. These override default behavior.
   that mode actually works; if the only way to make a binding fit the module is switching it to
   `mode = "authoritative"`, don't — write the raw `_member` resource instead, even though the
   module has that escape hatch.
-- Never grant a project-wide role just because the resource it should be scoped to doesn't
-  exist yet (e.g. a deploy identity's `roles/run.admin` before the Cloud Run service it deploys
-  exists). Use a `google_project_iam_member` with a `condition` block instead — the resource
-  name (`projects/<id>/locations/<region>/services/<name>`, `.../repositories/<id>`, etc.) is
-  deterministic and doesn't require the target resource to exist, so the grant can be scoped
-  from the start (see `modules/github-actions-wif`'s `run_admin_scoped` /
-  `artifactregistry_admin_scoped`). Same for Secret Manager access: grant per-secret via
+- Prefer a `google_project_iam_member` with a `condition` block over a project-wide grant when
+  the target resource doesn't exist yet — the resource name
+  (`projects/<id>/locations/<region>/services/<name>`, `.../repositories/<id>`, etc.) is
+  deterministic and doesn't require the target resource to exist, so the grant can in principle
+  be scoped from the start. But verify the resource type actually supports IAM Conditions
+  before relying on this — Cloud Run and Artifact Registry both don't (see below), and a
+  condition that isn't evaluated at all looks identical, at `terraform apply` time, to one that
+  works. Where it does work (Secret Manager, confirmed): grant per-secret via
   `google_secret_manager_secret_iam_member`, never a project-wide
   `roles/secretmanager.secretAccessor` (see `modules/cloud-run`'s `secret_accessor_secrets`,
   which defaults to zero grants).
@@ -107,11 +108,19 @@ Rules for working on this repo's Terraform. These override default behavior.
   one provisioning the repo.
 - A `create` call for a resource that doesn't exist yet is generally authorized against the
   *parent* (its location), not the resource's own `resource.name` — a single
-  `resource.name == <child>` check is not enough to let the deploy SA provision the resource in
-  the first place; where a service's IAM Conditions do support `resource.name` (Cloud Run does —
-  see `run_admin_scoped`), the condition needs an `||` branch matching the parent location too,
-  and the second branch stays needed afterward for every non-create call, which does check the
-  child's own `resource.name`. Same class of gap as `services.list` above.
+  `resource.name == <child>` check would not be enough to let the deploy SA provision the
+  resource in the first place, on a service whose IAM Conditions actually support
+  `resource.name`; the condition would need an `||` branch matching the parent location too.
+  Same class of gap as `services.list` above. Neither Cloud Run nor Artifact Registry support
+  `resource.name` conditions at all (see below), so this repo has no live example of the
+  pattern actually working — don't assume it does on a new service without checking Google's
+  own "resource types with conditional role bindings" reference first.
+- **Cloud Run's `Service` resource does not support IAM Conditions at all** — confirmed against
+  Google's Config Connector docs ("Supports IAM Conditions: No" for `RunService`), not assumed.
+  A `resource.name`-scoped condition on `run_admin` looked correct (it even matched
+  `run.services.create`'s own parent-location requirement) and still denied every request, the
+  exact same silent-no-op failure mode as Artifact Registry below. `run_admin` is granted
+  project-wide, unconditioned, for this reason.
 - Artifact Registry has no `resource.name`/`resource.type`-based IAM Conditions at all — its only
   documented conditional-access mechanism is Resource Manager tags, a different feature. A
   `resource.name`-scoped condition on `artifactregistry_admin` looked like it matched (the 403's

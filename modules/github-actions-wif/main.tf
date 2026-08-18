@@ -38,25 +38,17 @@ module "deploy_service_account" {
 }
 
 locals {
-  # Every project-level role the deploy SA holds, keyed by the same names the old individual
-  # resources used (kept via the moved blocks below, so this refactor doesn't churn real IAM
-  # bindings). condition = null means unconditioned/project-wide; see CLAUDE.md's IAM section
-  # for why each unconditioned entry couldn't be scoped further.
+  # Every project-level role the deploy SA holds. condition = null means unconditioned/
+  # project-wide; see CLAUDE.md's IAM section for why each unconditioned entry couldn't be
+  # scoped further.
   deploy_sa_roles = {
-    run_admin_scoped = {
-      role = "roles/run.admin"
-      # Matches the parent location too, not just the service name — see CLAUDE.md's IAM
-      # section on why create calls need that.
-      condition = {
-        title       = "${var.cloud_run_service_name}-only"
-        description = "Restricts roles/run.admin to the ${var.cloud_run_service_name} Cloud Run service only."
-        expression  = <<-EOT
-          resource.type == "run.googleapis.com/Service" && (
-            resource.name == "projects/${var.project_id}/locations/${var.region}" ||
-            resource.name == "projects/${var.project_id}/locations/${var.region}/services/${var.cloud_run_service_name}"
-          )
-        EOT
-      }
+    # Cloud Run's Service resource does not support IAM Conditions at all (Google's own docs:
+    # "Supports IAM Conditions: No") — confirmed after a resource.name-scoped condition here
+    # looked correct (matched run.services.create's own parent-location requirement) and still
+    # denied every request, the same silent-no-op failure mode as artifactregistry_admin below.
+    run_admin = {
+      role      = "roles/run.admin"
+      condition = null
     }
 
     # Artifact Registry has no resource.name-based IAM Conditions at all, confirmed by a real

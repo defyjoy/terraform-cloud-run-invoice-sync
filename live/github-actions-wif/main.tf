@@ -10,8 +10,5 @@ module "github_wif" {
   github_ref        = var.github_ref
   deploy_account_id = var.deploy_account_id
 
-  region                 = var.region
-  cloud_run_service_name = var.cloud_run_service_name
-
   state_bucket = var.state_bucket
 }

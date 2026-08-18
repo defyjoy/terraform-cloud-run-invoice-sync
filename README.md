@@ -59,8 +59,10 @@ docker build → docker push → `invoice-sync` (apply). Both `artifact-registry
 every time — idempotent, a no-op once they exist — so either self-heals on the next push if
 deleted, without a separate manual step.
 
-This means the deploy SA needs, project-wide and unconditioned (unlike every other grant in
-this repo, which is scoped to one named resource):
+This means the deploy SA needs, project-wide and unconditioned:
+- `roles/run.admin` — Cloud Run's `Service` resource has no `resource.name`-based IAM
+  Conditions at all (Google's own docs: "Supports IAM Conditions: No"). A scoped condition here
+  looked correct and silently denied every request; see CLAUDE.md's IAM section.
 - `roles/artifactregistry.admin` (not `.repoAdmin`/`.writer`, neither of which grant
   `repositories.create`/`.delete`) — Artifact Registry has no `resource.name`-based IAM
   Conditions at all, only Resource Manager tags, a different mechanism.

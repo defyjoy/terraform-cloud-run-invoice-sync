@@ -24,16 +24,6 @@ variable "state_bucket" {
 }
 
 variable "deploy_account_id" {
-  description = "Account ID (local part of the email) for the deploy service account. Must match ../invoice-sync's own deploy_account_id — that stack constructs this account's email itself instead of reading it from this stack's output."
-  type        = string
-}
-
-variable "region" {
-  description = "Region ../invoice-sync creates its Cloud Run service in. Must match that stack's own region."
-  type        = string
-}
-
-variable "cloud_run_service_name" {
-  description = "Name of ../invoice-sync's Cloud Run service. Must match that stack's own service_name — scopes the deploy SA's roles/run.admin grant to just this service."
+  description = "Account ID (local part of the email) for the deploy service account. Must match ../invoice-sync-runtime-sa's own deploy_account_id and ../invoice-sync's own runtime_service_account_id assumptions — other stacks construct this account's email themselves instead of reading it from this stack's output."
   type        = string
 }
