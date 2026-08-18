@@ -1,0 +1,19 @@
+# Reference only — real values live in .auto.tfvars, not this file.
+
+project_id = "yeti-504903"
+
+services = [
+  "run.googleapis.com",
+  "artifactregistry.googleapis.com",
+  "compute.googleapis.com",
+  "iam.googleapis.com",
+  "iamcredentials.googleapis.com",
+  "sts.googleapis.com",
+  "cloudresourcemanager.googleapis.com",
+  "secretmanager.googleapis.com",
+  "pubsub.googleapis.com",
+  "monitoring.googleapis.com",
+  "logging.googleapis.com",
+  "cloudtrace.googleapis.com",
+  "storage.googleapis.com",
+]

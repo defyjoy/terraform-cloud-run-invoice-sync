@@ -7,34 +7,50 @@ when a deployed revision fails to become ready.
 
 ```
 modules/
+├── enable-apis/              wraps google_project_service, generic across projects
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
 └── serverless-lb/            copied from defyjoy/google-cloud-terraform, unchanged
 live/
-├── github-actions-wif/  the deploy identity — its own state, applied by hand once (bootstrap)
-└── invoice-sync/        the service, Artifact Registry repo, load balancer, and failure
-                          alerting — applied by the pipeline from then on
+├── enable-apis/          service APIs this repo's stacks need — its own state, bootstrap
+├── github-actions-wif/   the deploy identity — its own state, applied by hand once (bootstrap)
+└── invoice-sync/         the service, Artifact Registry repo, load balancer, and failure
+                           alerting — applied by the pipeline from then on
 .github/
 └── workflows/
-    └── deploy.yml    build image -> push -> terraform apply -var image_tag=<sha>
+    └── deploy.yml    build image -> push -> `task invoice-sync` (same task a human runs)
 ```
 
 Each root module holds separate state:
-`gs://yeti-terraform-state-bucket/yeti-504903/live/<github-actions-wif|invoice-sync>`. They're
-split because `github-actions-wif` has to exist before the pipeline can authenticate at all —
-if it lived in the same state as the service, the very first apply of *everything* would have
-to run locally. Splitting it keeps that manual step to the smallest possible slice, and lets
-`invoice-sync` be applied via GitHub only, per this repo's `CLAUDE.md`.
+`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|invoice-sync>`.
+`github-actions-wif` is split out from `invoice-sync` because it has to exist before the
+pipeline can authenticate at all — if it lived in the same state as the service, the very first
+apply of *everything* would have to run locally. Splitting it keeps that manual step to the
+smallest possible slice, and lets `invoice-sync` be applied via GitHub only, per this repo's
+`CLAUDE.md`. `enable-apis` is split out for the same reason: both other stacks need its APIs
+enabled before they can do anything.
+
+`deploy.yml` never runs `terraform` directly — it installs Task and calls the exact same
+`task invoice-sync` a human would, so the init/backend-config/apply sequence lives in one place
+(`Taskfile.yml`'s `_tf` task) instead of being duplicated as raw commands in the workflow. The
+backend bucket and prefix Task builds `-backend-config` from come from `PROJECT_ID`/
+`STATE_BUCKET`, which Task reads from the environment automatically — set once in `deploy.yml`'s
+job-level `env:`, not hardcoded a second time as literal `-backend-config` strings.
 
 ## Usage
 
 ```bash
 task                             # list tasks
+task enable-apis                 # init + plan the service APIs (bootstrap only)
 task github-actions-wif          # init + plan the deploy identity (bootstrap only)
 task invoice-sync                # init + plan the service (normally the pipeline's job)
 ACTION=apply task invoice-sync   # init + apply
 ```
+
+`PROJECT_ID` and `STATE_BUCKET` (used for every task's `-backend-config`) default to
+`yeti-504903` / `yeti-terraform-state-bucket` but can be overridden the same way `ACTION` is,
+via the environment: `PROJECT_ID=other-project STATE_BUCKET=other-bucket task invoice-sync`.
 
 `invoice-sync`'s `image_tag` has no default and must always be passed explicitly:
 
@@ -42,13 +58,19 @@ ACTION=apply task invoice-sync   # init + apply
 task invoice-sync -- -var image_tag=<git-sha>
 ```
 
-## Bootstrap: `github-actions-wif` must be applied locally, once
+## Bootstrap: `enable-apis` and `github-actions-wif` must be applied locally, once
 
 The GitHub Actions pipeline authenticates via Workload Identity Federation, but the pool,
 provider and deploy service account it authenticates as are themselves Terraform-managed — they
 can't exist before the first apply, and the pipeline can't authenticate before they exist. So,
 before the pipeline can deploy anything:
 
+0. Apply `enable-apis` locally first — `github-actions-wif` and `invoice-sync` both fail without
+   `run.googleapis.com`, `sts.googleapis.com` and `cloudresourcemanager.googleapis.com` enabled,
+   none of which this project enables by default:
+   ```bash
+   ACTION=apply task enable-apis
+   ```
 1. Apply `github-actions-wif` locally, with your own `gcloud` credentials:
    ```bash
    ACTION=apply task github-actions-wif

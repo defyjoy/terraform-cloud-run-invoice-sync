@@ -15,6 +15,12 @@ tasks:
     cmds:
       - task --list
 
+  enable-apis:
+    desc: 'Service APIs this repo needs across the project — bootstrap only, apply this before github-actions-wif or invoice-sync (ACTION=plan|apply|destroy, default plan)'
+    cmds:
+      - task: _tf
+        vars: { DIR: '{{.ROOT}}/enable-apis' }
+
   github-actions-wif:
     desc: 'GitHub Actions deploy identity (WIF pool/provider/service account) — bootstrap only, apply this locally before the pipeline can run anything else (ACTION=plan|apply|destroy, default plan)'
     cmds:
@@ -36,7 +42,7 @@ tasks:
     desc: Validate every root module
     cmds:
       - |
-        for component in github-actions-wif invoice-sync; do
+        for component in enable-apis github-actions-wif invoice-sync; do
           echo "==> $component"
           terraform -chdir={{.ROOT}}/$component validate
         done
