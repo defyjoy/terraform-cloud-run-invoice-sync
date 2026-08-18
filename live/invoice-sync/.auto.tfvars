@@ -6,7 +6,7 @@ artifact_registry_repo = "invoice-sync"
 
 notification_email = "joydeepbeyondsky86@gmail.com"
 
-deploy_account_id = "github-deployer"
+runtime_service_account_id = "invoice-sync-us-central1-sa"
 
 vpc_connector_name = "invoice-sync-connector"
 vpc_egress         = "PRIVATE_RANGES_ONLY"

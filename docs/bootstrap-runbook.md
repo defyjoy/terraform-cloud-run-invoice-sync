@@ -27,7 +27,17 @@ ACTION=apply task enable-apis
 ACTION=apply task github-actions-wif
 ```
 
-## 4. Set the pipeline's repo variables from its outputs
+## 4. Apply `invoice-sync-runtime-sa` locally
+
+The pipeline never applies this stack either (granting roles to a service account needs
+project-wide or service-account-wide IAM-editing power that can't be scoped down — see
+CLAUDE.md's IAM section), so re-run this step by hand whenever the runtime SA's roles change.
+
+```bash
+ACTION=apply task invoice-sync-runtime-sa
+```
+
+## 5. Set the pipeline's repo variables from its outputs
 
 ```bash
 gh variable set WIF_PROVIDER --body "$(terraform -chdir=live/github-actions-wif output -raw workload_identity_provider)"

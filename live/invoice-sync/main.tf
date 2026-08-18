@@ -20,11 +20,12 @@ module "cloud_run" {
     connector = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
   }
 
-  create_service_account = true
-  service_account_project_roles = [
-    "roles/logging.logWriter",
-    "roles/cloudtrace.agent",
-  ]
+  # ../invoice-sync-runtime-sa's own state creates this account and grants it its project
+  # roles plus the deploy SA's actAs — the pipeline's own deploy SA can't be scoped to do
+  # either safely (see that stack's main.tf and CLAUDE.md's IAM section), so this stack only
+  # references it by its deterministic email, same pattern as the VPC connector.
+  create_service_account = false
+  service_account        = "${var.runtime_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
 
   # No secrets are used yet — the placeholder Hello World app doesn't read Secret Manager.
   # Add secret IDs here (not a project-wide role) once the real service names ones it needs.
@@ -36,10 +37,6 @@ module "cloud_run" {
   # Ingress already restricts the path in; this grants the load balancer's anonymous callers
   # invoker access so it can actually reach the service.
   members = ["allUsers"]
-
-  # Lets ../github-actions-wif's deploy SA deploy new revisions running as this service's own
-  # service account, without granting it iam.serviceAccountUser on the whole project.
-  service_account_users = ["serviceAccount:${var.deploy_account_id}@${var.project_id}.iam.gserviceaccount.com"]
 
   deletion_protection = var.deletion_protection
 

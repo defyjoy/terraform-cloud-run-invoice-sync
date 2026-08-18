@@ -133,10 +133,21 @@ Rules for working on this repo's Terraform. These override default behavior.
   can silently never match, an unverified condition here was judged not worth risking on infra
   with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
   confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.
-- `roles/iam.serviceAccountCreator` (`modules/github-actions-wif`'s `service_account_creator`),
-  for `../invoice-sync`'s `create_service_account = true`. Deliberately not
-  `roles/iam.serviceAccountAdmin`: that role also grants delete/update/setIamPolicy on every
-  service account in the project (including the deploy SA's own, and anything from the other
-  repo), whereas `.serviceAccountCreator` grants only create/get/list. Same as the roles above,
-  granted project-wide since account creation is authorized against the project, not a
-  not-yet-existing account name.
+- `live/invoice-sync-runtime-sa` (Cloud Run's runtime SA, its `roles/logging.logWriter`/
+  `roles/cloudtrace.agent` project roles, and the deploy SA's `roles/iam.serviceAccountUser`
+  grant on it) is bootstrap-only, applied locally, and never touched by the pipeline — same
+  reasoning as `enable-apis`, one level further: granting *any* role to a service account (via
+  `google_project_iam_member` for the project roles, or `google_service_account_iam_member` for
+  the actAs grant) requires `resourcemanager.projects.setIamPolicy` or
+  `iam.serviceAccounts.setIamPolicy`, and neither can be scoped down to "only this one grant" —
+  `roles/resourcemanager.projectIamAdmin` is Google's own narrowest role for the former, and it
+  grants the ability to rewrite the *entire* project's IAM policy (any role, to any member,
+  including granting itself Owner). Confirmed via `gcloud iam roles describe`, not assumed. This
+  was an explicit, discussed trade-off — the alternative (granting the deploy SA
+  `projectIamAdmin` + `iam.serviceAccountAdmin`) was rejected as too large a blast radius on a
+  shared project. `live/invoice-sync` only ever references the runtime SA by its deterministic
+  email (`create_service_account = false`), never creates or grants it anything itself.
+- `roles/pubsub.editor` (`modules/github-actions-wif`'s `pubsub_editor`), for
+  `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
+  `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not
+  `setIamPolicy` on topics, which `.admin` also grants.

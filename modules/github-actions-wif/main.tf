@@ -89,20 +89,11 @@ locals {
       condition = null
     }
 
-    # roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
-    # create_service_account = true (the Cloud Run runtime SA), and .serviceAccountCreator
-    # only grants create/get/list, not delete/update/setIamPolicy on every service account in
-    # the project.
-    service_account_creator = {
-      role      = "roles/iam.serviceAccountCreator"
-      condition = null
-    }
-
-    # Needed to read the Cloud Run runtime SA's IAM policy before ../invoice-sync's
-    # google_service_account_iam_member (service_account_users) can update it -
-    # .serviceAccountViewer grants get/list/getIamPolicy only, no write permissions.
-    service_account_viewer = {
-      role      = "roles/iam.serviceAccountViewer"
+    # roles/pubsub.editor, not .admin: needed for ../invoice-sync's deployment_alert module to
+    # create its Pub/Sub topic. .editor grants topics.create/get/list/update/delete/publish but
+    # not setIamPolicy, unlike .admin.
+    pubsub_editor = {
+      role      = "roles/pubsub.editor"
       condition = null
     }
   }

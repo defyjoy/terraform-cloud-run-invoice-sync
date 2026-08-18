@@ -9,34 +9,41 @@ when a deployed revision fails to become ready.
 modules/
 ├── enable-apis/              wraps google_project_service, generic across projects
 ├── artifact-registry/        wraps google_artifact_registry_repository
+├── invoice-sync-runtime-sa/  Cloud Run runtime SA + its project roles + deploy SA's actAs grant
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
 └── serverless-lb/            copied from defyjoy/google-cloud-terraform, unchanged
 live/
-├── enable-apis/          service APIs this repo's stacks need — its own state
-├── github-actions-wif/   the deploy identity — its own state, applied by hand once (bootstrap)
-├── artifact-registry/    the invoice-sync image repo — its own state, applied ahead of
-│                         docker push, since it has to exist before the pipeline can push to it
-├── network/              this repo's own VPC and connector (directly composing
-│                         terraform-google-modules/network/google, no wrapper module) — its own
-│                         state, applied ahead of invoice-sync, since Cloud Run's vpc_access
-│                         references it by name
-└── invoice-sync/         the service, load balancer, and failure alerting
+├── enable-apis/              service APIs this repo's stacks need — its own state
+├── github-actions-wif/       the deploy identity — its own state, applied by hand once
+│                             (bootstrap)
+├── artifact-registry/        the invoice-sync image repo — its own state, applied ahead of
+│                             docker push, since it has to exist before the pipeline can push
+│                             to it
+├── network/                  this repo's own VPC and connector (directly composing
+│                             terraform-google-modules/network/google, no wrapper module) —
+│                             its own state, applied ahead of invoice-sync, since Cloud Run's
+│                             vpc_access references it by name
+├── invoice-sync-runtime-sa/  the Cloud Run runtime service account — its own state, applied
+│                             by hand once (bootstrap)
+└── invoice-sync/             the service, load balancer, and failure alerting
 .github/
 └── workflows/
     └── deploy.yml    artifact-registry + network -> build -> push -> `task invoice-sync`
 ```
 
 Each root module holds separate state:
-`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|network|invoice-sync>`.
-`enable-apis` and `github-actions-wif` are both bootstrap-only, applied locally with the
-operator's own credentials, and never touched by the pipeline — `github-actions-wif` because it
-has to exist before the pipeline can authenticate at all, and `enable-apis` because
-`roles/serviceusage.*` has no way to scope down to individual services (see CLAUDE.md's IAM
-section), so granting the deploy SA project-wide service-enablement access isn't worth the blast
-radius. `artifact-registry` and `network` are split into their own stacks because the pipeline
-applies them on every run, ahead of what depends on them.
+`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|network|invoice-sync-runtime-sa|invoice-sync>`.
+`enable-apis`, `github-actions-wif` and `invoice-sync-runtime-sa` are all bootstrap-only,
+applied locally with the operator's own credentials, and never touched by the pipeline —
+`github-actions-wif` because it has to exist before the pipeline can authenticate at all,
+`enable-apis` because `roles/serviceusage.*` has no way to scope down to individual services,
+and `invoice-sync-runtime-sa` because granting *any* role to a service account requires
+`resourcemanager.projects.setIamPolicy`/`iam.serviceAccounts.setIamPolicy`, neither of which can
+be scoped to "only this one grant" (see CLAUDE.md's IAM section for all three). `artifact-registry`
+and `network` are split into their own stacks because the pipeline applies them on every run,
+ahead of what depends on them.
 
 `deploy.yml` never runs `terraform` directly — it installs Task and calls the exact same
 `task <name>` a human would, so the init/backend-config/apply sequence lives in one place
@@ -62,12 +69,18 @@ this repo, which is scoped to one named resource):
   This is a materially bigger blast radius than everything else here: `yeti-504903` also hosts
   the `google-cloud-terraform` repo's hub/dev VPCs, so the deploy SA can touch that networking
   too, not just this repo's own. Accepted as a discussed trade-off — see CLAUDE.md's IAM section.
-- `roles/iam.serviceAccountCreator`, for `invoice-sync`'s `create_service_account = true`
-  (the Cloud Run runtime SA) — narrower than `.serviceAccountAdmin`, which also grants
-  delete/update/setIamPolicy on every service account in the project.
+- `roles/pubsub.editor` (not `.admin`), for `deployment_alert`'s Pub/Sub topic.
 
-`enable-apis` is deliberately kept local-only, unlike `artifact-registry`/`network` — see
-CLAUDE.md's IAM section for why `roles/serviceusage.*` doesn't scope down the same way.
+Deliberately **not** granted to the deploy SA: anything that lets it modify the project's IAM
+policy or a service account's IAM policy (`resourcemanager.projectIamAdmin`,
+`iam.serviceAccountAdmin`) — there's no way to scope either down to "only this one grant," and
+`projectIamAdmin` specifically can rewrite the entire project's IAM policy, any role to any
+member. That's why the Cloud Run runtime SA — its project roles (`logging.logWriter`,
+`cloudtrace.agent`) and the deploy SA's `iam.serviceAccountUser` grant on it — lives in
+`invoice-sync-runtime-sa`, applied locally, not by the pipeline. See CLAUDE.md's IAM section.
+
+`enable-apis` and `invoice-sync-runtime-sa` are deliberately kept local-only, unlike
+`artifact-registry`/`network` — see CLAUDE.md's IAM section for why.
 
 ## Usage
 
@@ -77,6 +90,7 @@ task enable-apis                 # init + plan the service APIs (bootstrap only,
 task github-actions-wif          # init + plan the deploy identity (bootstrap only, local)
 task artifact-registry           # init + plan the image repo (normally the pipeline's job)
 task network                     # init + plan the VPC/connector (normally the pipeline's job)
+task invoice-sync-runtime-sa     # init + plan the runtime SA (bootstrap only, local)
 task invoice-sync                # init + plan the service (normally the pipeline's job)
 ACTION=apply task invoice-sync   # init + apply
 ```
@@ -91,13 +105,16 @@ via the environment: `PROJECT_ID=other-project STATE_BUCKET=other-bucket task in
 task invoice-sync -- -var image_tag=<git-sha>
 ```
 
-## Bootstrap: `enable-apis` and `github-actions-wif` must be applied locally, once
+## Bootstrap: three stacks must be applied locally, once
 
 The GitHub Actions pipeline authenticates via Workload Identity Federation, but the pool,
 provider and deploy service account it authenticates as are themselves Terraform-managed — they
 can't exist before the first apply, and the pipeline can't authenticate before they exist. And
 `github-actions-wif` itself can't apply without APIs (`iam`, `sts`, `cloudresourcemanager`, ...)
-that this project doesn't enable by default. So, before the pipeline can deploy anything:
+that this project doesn't enable by default. Separately, the deploy SA can never be granted the
+project-wide (or service-account-wide) IAM-editing power needed to create the Cloud Run runtime
+SA's role grants itself — see CLAUDE.md's IAM section. So, before the pipeline can deploy
+anything:
 
 0. Apply `enable-apis` locally, with your own `gcloud` credentials — the pipeline never applies
    this stack (see CLAUDE.md's IAM section), so any newly-added API needs a re-run of this step:
@@ -108,24 +125,31 @@ that this project doesn't enable by default. So, before the pipeline can deploy 
    ```bash
    ACTION=apply task github-actions-wif
    ```
-   Both this and `enable-apis` are meant to be applied outside the pipeline only — neither needs
-   an image tag or a running Cloud Run service, so there's no bootstrap placeholder value needed
-   anywhere. `artifact-registry` doesn't need a separate manual apply: once `github-actions-wif`
-   exists and its outputs are set as repo variables (step 3), the pipeline applies it itself on
-   every run.
-2. Read its outputs:
+2. Apply `invoice-sync-runtime-sa` locally, with your own `gcloud` credentials — this creates
+   the Cloud Run runtime SA, grants it its project roles, and grants the deploy SA
+   `roles/iam.serviceAccountUser` on it:
+   ```bash
+   ACTION=apply task invoice-sync-runtime-sa
+   ```
+   All three of these are meant to be applied outside the pipeline only — none needs an image
+   tag or a running Cloud Run service, so there's no bootstrap placeholder value needed
+   anywhere. `artifact-registry`/`network` don't need a separate manual apply: once
+   `github-actions-wif` exists and its outputs are set as repo variables (step 4), the pipeline
+   applies both itself on every run.
+3. Read `github-actions-wif`'s outputs:
    ```bash
    terraform -chdir=live/github-actions-wif output -raw workload_identity_provider
    terraform -chdir=live/github-actions-wif output -raw service_account_email
    ```
-3. Set them as GitHub repo variables (Settings → Secrets and variables → Actions → Variables):
+4. Set them as GitHub repo variables (Settings → Secrets and variables → Actions → Variables):
    `WIF_PROVIDER` and `DEPLOY_SA_EMAIL`.
-4. `live/invoice-sync` builds this same account's email itself from `project_id` +
-   `deploy_account_id` — as long as both stacks' `.auto.tfvars` set the same
-   `deploy_account_id` (`"github-deployer"` by default in both), there's nothing to copy from
-   this stack's output into the other.
-5. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy
-   `invoice-sync` end to end — no further local applies required.
+5. `live/invoice-sync` builds the runtime SA's email itself from `project_id` +
+   `runtime_service_account_id` — as long as both `invoice-sync-runtime-sa` and `invoice-sync`
+   `.auto.tfvars` set matching values (`account_id` / `runtime_service_account_id`), there's
+   nothing to copy from one stack's output into the other.
+6. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy
+   `invoice-sync` end to end — no further local applies required, unless the runtime SA's own
+   roles change (re-run step 2) or a new API is needed (re-run step 0).
 
 ## Deployment failure alerting
 
