@@ -1,14 +1,14 @@
 output "connector_id" {
   description = "Full resource ID of the Serverless VPC Access connector, for Cloud Run's vpc_access.connector."
-  value       = google_vpc_access_connector.this.id
+  value       = tolist(module.serverless_connector.connector_ids)[0]
 }
 
 output "network_name" {
   description = "Name of the created VPC."
-  value       = google_compute_network.this.name
+  value       = module.vpc.network_name
 }
 
 output "network_self_link" {
   description = "Self link of the created VPC."
-  value       = google_compute_network.this.self_link
+  value       = module.vpc.network_self_link
 }
