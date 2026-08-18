@@ -1,7 +1,15 @@
-# Reference only — real values live in .auto.tfvars, not this file.
+# Reference only — real values live in .auto.tfvars, not this file. Every variable is required
+# (no defaults) — copy this file's shape when standing up a second instance of this stack.
+
+project_id = "yeti-504903"
 
 github_owner = "defyjoy"
 github_repo  = "terraform-cloud-run-invoice-sync"
 
-# project_id   = "yeti-504903"
-# state_bucket = "yeti-terraform-state-bucket"
+state_bucket = "yeti-terraform-state-bucket"
+
+project_roles = [
+  "roles/run.admin",
+  "roles/artifactregistry.writer",
+  "roles/iam.serviceAccountUser",
+]

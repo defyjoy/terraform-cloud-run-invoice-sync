@@ -56,6 +56,4 @@ jobs:
       - name: Terraform apply
         working-directory: live/invoice-sync
         run: |
-          terraform apply -input=false -auto-approve \
-            -var project_id=${{ env.PROJECT_ID }} \
-            -var image_tag=${{ github.sha }}
+          terraform apply -input=false -auto-approve -var image_tag=${{ github.sha }}

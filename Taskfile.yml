@@ -57,4 +57,4 @@ tasks:
         terraform -chdir={{.DIR}} init -input=false -reconfigure \
           -backend-config="bucket={{.STATE_BUCKET}}" \
           -backend-config="prefix={{.PROJECT_ID}}/{{.DIR}}"
-      - terraform -chdir={{.DIR}} {{.ACTION}} -input=false {{.APPROVE}} -var project_id={{.PROJECT_ID}} {{.CLI_ARGS}}
+      - terraform -chdir={{.DIR}} {{.ACTION}} -input=false {{.APPROVE}} {{.CLI_ARGS}}

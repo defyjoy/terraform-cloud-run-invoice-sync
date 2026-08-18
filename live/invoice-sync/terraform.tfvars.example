@@ -1,4 +1,11 @@
-# Reference only — real values live in .auto.tfvars, not this file.
+# Reference only — real values live in .auto.tfvars, not this file. Every variable is required
+# (no defaults) except image_tag, which the pipeline always passes with -var on the CLI.
+
+project_id   = "yeti-504903"
+region       = "us-central1"
+service_name = "invoice-sync"
+
+artifact_registry_repo = "invoice-sync"
 
 notification_email = "you@example.com"
 
@@ -6,19 +13,15 @@ notification_email = "you@example.com"
 # that stack has been applied. This stack's apply fails until it's set.
 deploy_service_account_email = "github-deployer@yeti-504903.iam.gserviceaccount.com"
 
-# project_id          = "yeti-504903"
-# region              = "us-central1"
-# service_name        = "invoice-sync"
-# min_instance_count  = 0
-# max_instance_count  = 2
-# deletion_protection = true
-
 # Cloud Run is private (INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER) and reached only through
-# module.lb. Defaults point at the hub VPC created by the google-cloud-terraform repo's
-# live/hub/vpc — override if that stack isn't reused.
-# network_name    = "yeti-hub-vpc"
-# subnetwork_name = "yeti-hub-run-us-central1-0"
-# vpc_egress      = "PRIVATE_RANGES_ONLY"
-# lb_name         = "invoice-sync-lb"
+# module.lb. Points at the hub VPC created by the google-cloud-terraform repo's live/hub/vpc —
+# change if that stack isn't reused.
+network_name    = "yeti-hub-vpc"
+subnetwork_name = "yeti-hub-run-us-central1-0"
+vpc_egress      = "PRIVATE_RANGES_ONLY"
 
-# image_tag has no default — the pipeline always passes -var image_tag=<git sha>.
+lb_name = "invoice-sync-lb"
+
+min_instance_count  = 0
+max_instance_count  = 2
+deletion_protection = true

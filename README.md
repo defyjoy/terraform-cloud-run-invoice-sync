@@ -85,10 +85,10 @@ Cloud Run's `ingress` is `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` — the servic
 `google-cloud-terraform`'s `live/hub/cloud-run` pattern.
 
 Getting there requires Direct VPC egress into a real VPC, which this repo doesn't create itself
-— `network_name`/`subnetwork_name` (`variables.tf`) default to the hub VPC and its Cloud Run
+— `network_name`/`subnetwork_name` (`.auto.tfvars`) are set to the hub VPC and its Cloud Run
 subnet (`yeti-hub-vpc` / `yeti-hub-run-us-central1-0`) already created by the
-`google-cloud-terraform` repo's `live/hub/vpc`. That stack must exist first; override the
-variables to point elsewhere if this repo shouldn't depend on it.
+`google-cloud-terraform` repo's `live/hub/vpc`. That stack must exist first; change the values
+in `.auto.tfvars` if this repo shouldn't depend on it.
 
 No VPN is wired up — the load balancer is public. Add one later (or switch ingress to
 `INGRESS_TRAFFIC_INTERNAL_ONLY` and drop the load balancer) if the service needs to be
