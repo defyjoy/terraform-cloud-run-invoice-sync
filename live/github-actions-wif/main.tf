@@ -7,12 +7,8 @@ module "github_wif" {
   project_id   = var.project_id
   github_owner = var.github_owner
   github_repo  = var.github_repo
-}
 
-# The pipeline runs terraform init/apply itself, so its deploy service account needs write
-# access to the shared state bucket (owned by the google-cloud-terraform repo, not this one).
-resource "google_storage_bucket_iam_member" "deploy_can_write_state" {
-  bucket = var.state_bucket
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${module.github_wif.service_account_email}"
+  # The pipeline runs terraform init/apply itself, so its deploy service account needs write
+  # access to the shared state bucket (owned by the google-cloud-terraform repo, not this one).
+  state_bucket = var.state_bucket
 }

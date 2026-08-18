@@ -162,6 +162,12 @@ variable "members" {
   default     = []
 }
 
+variable "service_account_users" {
+  description = "Members granted roles/iam.serviceAccountUser on the service's own service account (created or existing), e.g. a CI/CD deploy service account that needs to deploy new revisions running as it. Fully qualified members, e.g. [\"serviceAccount:...\"]."
+  type        = list(string)
+  default     = []
+}
+
 variable "deletion_protection" {
   description = "Block terraform destroy on the service."
   type        = bool

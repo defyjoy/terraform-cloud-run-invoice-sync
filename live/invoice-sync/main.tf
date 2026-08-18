@@ -1,8 +1,9 @@
-resource "google_artifact_registry_repository" "invoice_sync" {
-  project       = var.project_id
+module "artifact_registry" {
+  source = "../../modules/artifact-registry"
+
+  project_id    = var.project_id
   location      = var.region
   repository_id = var.artifact_registry_repo
-  format        = "DOCKER"
   description   = "invoice-sync Cloud Run images, built and pushed by the deploy pipeline."
 }
 
@@ -13,7 +14,7 @@ module "cloud_run" {
   service_name = var.service_name
   location     = var.region
 
-  image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.invoice_sync.repository_id}/invoice-sync:${var.image_tag}"
+  image = "${module.artifact_registry.image_prefix}/invoice-sync:${var.image_tag}"
 
   # Only traffic that has passed through the load balancer (or is already inside the VPC) is
   # let in — *.run.app direct access is refused, so module.lb is the only public entry point.
@@ -41,6 +42,13 @@ module "cloud_run" {
   # invoker access so it can actually reach the service.
   members = ["allUsers"]
 
+  # The deploy service account itself lives in ../github-actions-wif's own state — it has to
+  # exist before this stack's pipeline can even authenticate, so it's applied by hand once,
+  # ahead of everything here. var.deploy_service_account_email comes from that stack's output.
+  # This lets it deploy new revisions running as this service's own service account, without
+  # granting it iam.serviceAccountUser on the whole project.
+  service_account_users = ["serviceAccount:${var.deploy_service_account_email}"]
+
   deletion_protection = var.deletion_protection
 
   labels = {
@@ -56,18 +64,6 @@ module "lb" {
   region     = var.region
 
   cloud_run_service_name = module.cloud_run.service_name
-}
-
-# The deploy service account itself lives in ../github-actions-wif's own state — it has to
-# exist before this stack's pipeline can even authenticate, so it's applied by hand once,
-# ahead of everything here. var.deploy_service_account_email comes from that stack's output.
-
-# Lets the deploy service account act as the Cloud Run runtime service account when deploying
-# new revisions, without granting it broader iam.serviceAccountUser on the whole project.
-resource "google_service_account_iam_member" "deploy_can_act_as_runtime" {
-  service_account_id = module.cloud_run.service_account_id
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${var.deploy_service_account_email}"
 }
 
 module "deployment_alert" {

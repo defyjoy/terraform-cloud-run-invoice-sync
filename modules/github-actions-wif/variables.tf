@@ -40,3 +40,9 @@ variable "project_roles" {
     "roles/iam.serviceAccountUser",
   ]
 }
+
+variable "state_bucket" {
+  description = "GCS bucket to grant the deploy service account roles/storage.objectAdmin on, so it can run terraform init/apply itself. Null skips this binding."
+  type        = string
+  default     = null
+}
