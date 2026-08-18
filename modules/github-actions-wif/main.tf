@@ -61,10 +61,8 @@ resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   role    = "roles/artifactregistry.admin"
   member  = module.deploy_service_account.iam_email
 
-  # roles/artifactregistry.admin, not .repoAdmin: .repoAdmin has no repositories.create/.delete
-  # at all, only content-level permissions on a repo that already exists — see CLAUDE.md's IAM
-  # section. Also matches the parent location, not just the repo name, since create calls check
-  # the parent.
+  # Matches the parent location too, not just the repo name — see CLAUDE.md's IAM section on
+  # why create calls need that, and why this role is .admin rather than .repoAdmin.
   condition {
     title       = "${var.artifact_registry_repo}-only"
     description = "Restricts roles/artifactregistry.admin to the ${var.artifact_registry_repo} Artifact Registry repo only."
