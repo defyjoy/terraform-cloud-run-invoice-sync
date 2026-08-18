@@ -94,6 +94,13 @@ Rules for working on this repo's Terraform. These override default behavior.
   discussed trade-off (see README's "Pipeline stages and privileges"), not a default — don't
   extend this pattern to other roles just because it exists here, and don't widen the condition
   to more services than `enable-apis` actually needs without the same discussion.
+  `google_project_service`'s state refresh calls `serviceusage.services.list`, which is
+  authorized against the project container, not individual services — confirmed via a real
+  403 ("Permission denied to list services for consumer container") when the conditioned Admin
+  grant above was the only one present. No `resource.name`-scoped condition can satisfy a List
+  call, so `serviceusage_viewer` (read-only, unconditioned, project-wide) exists alongside it —
+  keep both: don't drop the condition on Admin to work around this, and don't skip Viewer next
+  time this same pattern comes up for another List-heavy API.
 - Creating (not just writing to) an Artifact Registry repo needs `roles/artifactregistry.admin`
   or `.repoAdmin` — `.writer` only grants push/pull to a repo that already exists, it has no
   `repositories.create`/`.delete`. Don't reach for `.writer` when the caller is the one

@@ -48,14 +48,20 @@ run they're no-ops — but running them every time means a newly-added API or a 
 self-heals on the next push, without a separate manual step.
 
 Doing this from the pipeline (rather than keeping `enable-apis`/`artifact-registry` local-only
-like `github-actions-wif`) means the deploy SA needs two grants broader than everything else it
-holds:
+like `github-actions-wif`) means the deploy SA needs three grants broader than everything else
+it holds:
 - `roles/serviceusage.serviceUsageAdmin`, scoped via an IAM Condition to exactly the service
   names `live/enable-apis`' own `services` list declares (`modules/github-actions-wif`'s
   `enable_apis_services` var) — narrower than the project-wide default, but still whatever's on
   that list, not one named resource the way `run.admin`/`artifactregistry.repoAdmin` are scoped.
   Service enablement has no per-resource IAM story to scope down to a single API the way Cloud
   Run services or Artifact Registry repos do.
+- `roles/serviceusage.serviceUsageViewer`, unconditioned and project-wide (read-only). Required
+  in addition to the scoped Admin grant above — confirmed by a real 403
+  ("Permission denied to list services for consumer container") the first time this pipeline
+  ran with only the conditioned grant. `google_project_service`'s state refresh calls
+  `serviceusage.services.list`, which is authorized against the whole project, not any single
+  service, so no `resource.name`-scoped condition can grant it.
 - `roles/artifactregistry.repoAdmin` (not `.writer`) on the invoice-sync repo, since creating
   and deleting a repo needs `repositories.create`/`.delete`, which `.writer` doesn't grant.
 

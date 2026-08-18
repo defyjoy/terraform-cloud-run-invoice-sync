@@ -91,6 +91,20 @@ resource "google_project_iam_member" "serviceusage_admin_scoped" {
   }
 }
 
+# google_project_service's refresh step calls serviceusage.services.list, not .get, to read
+# current state — confirmed via a real 403 ("Permission denied to list services for consumer
+# container") when serviceusage_admin_scoped above was the only grant. List is authorized
+# against the project container, not the individual service resources the condition above
+# checks resource.name against, so no resource.name-scoped condition can satisfy it — this one
+# has to be project-wide. Kept to the read-only Viewer role rather than dropping the condition
+# on Admin above, so the pipeline can see what's enabled project-wide but can still only
+# enable/disable the services enable_apis_services names.
+resource "google_project_iam_member" "serviceusage_viewer" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageViewer"
+  member  = module.deploy_service_account.iam_email
+}
+
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
 # equivalent to a key file but without one ever existing.
 #
