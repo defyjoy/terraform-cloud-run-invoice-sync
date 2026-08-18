@@ -8,7 +8,9 @@ Rules for working on this repo's Terraform. These override default behavior.
   the load balancer in front of Cloud Run (`modules/serverless-lb`) — no public IPs, no
   `INGRESS_TRAFFIC_ALL` on Cloud Run, no public Cloud SQL, no `0.0.0.0/0` ingress firewall
   rules, unless the user explicitly asks for an exception and understands what it opens up.
-- `live/network` (`modules/network`) is this repo's own VPC — a dedicated network with a
+- `live/network` (directly composing `terraform-google-modules/network/google` and its
+  `vpc-serverless-connector-beta`/`firewall-rules` submodules, no wrapper module of our own) is
+  this repo's own VPC — a dedicated network with a
   Serverless VPC Access connector on a private /28 subnet, which Cloud Run attaches to via
   `vpc_access.connector`. This project (`yeti-504903`) also hosts the `google-cloud-terraform`
   repo's hub/dev VPCs; `live/network` does not touch them and shouldn't grow to.

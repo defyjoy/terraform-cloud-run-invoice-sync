@@ -9,7 +9,6 @@ when a deployed revision fails to become ready.
 modules/
 ├── enable-apis/              wraps google_project_service, generic across projects
 ├── artifact-registry/        wraps google_artifact_registry_repository
-├── network/                  VPC + Serverless VPC Access connector + firewall rule
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
@@ -19,8 +18,10 @@ live/
 ├── github-actions-wif/   the deploy identity — its own state, applied by hand once (bootstrap)
 ├── artifact-registry/    the invoice-sync image repo — its own state, applied ahead of
 │                         docker push, since it has to exist before the pipeline can push to it
-├── network/              this repo's own VPC and connector — its own state, applied ahead of
-│                         invoice-sync, since Cloud Run's vpc_access references it by name
+├── network/              this repo's own VPC and connector (directly composing
+│                         terraform-google-modules/network/google, no wrapper module) — its own
+│                         state, applied ahead of invoice-sync, since Cloud Run's vpc_access
+│                         references it by name
 └── invoice-sync/         the service, load balancer, and failure alerting
 .github/
 └── workflows/
