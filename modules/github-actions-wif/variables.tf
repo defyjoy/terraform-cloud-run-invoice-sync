@@ -46,8 +46,13 @@ variable "cloud_run_service_name" {
 }
 
 variable "artifact_registry_repo" {
-  description = "ID of the Artifact Registry repo roles/artifactregistry.writer is scoped to via an IAM Condition. Doesn't need to exist yet — the condition matches on name, not on the resource's existence."
+  description = "ID of the Artifact Registry repo roles/artifactregistry.repoAdmin is scoped to via an IAM Condition. Doesn't need to exist yet — the condition matches on name, not on the resource's existence."
   type        = string
+}
+
+variable "enable_apis_services" {
+  description = "Service names (e.g. \"run.googleapis.com\") roles/serviceusage.serviceUsageAdmin is scoped to via an IAM Condition — should match ../enable-apis's own services list exactly, so the deploy SA can enable/disable exactly what that stack declares and nothing else."
+  type        = set(string)
 }
 
 variable "state_bucket" {

@@ -13,6 +13,7 @@ module "github_wif" {
   region                 = var.region
   cloud_run_service_name = var.cloud_run_service_name
   artifact_registry_repo = var.artifact_registry_repo
+  enable_apis_services   = var.enable_apis_services
 
   state_bucket = var.state_bucket
 }

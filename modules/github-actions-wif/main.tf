@@ -56,15 +56,38 @@ resource "google_project_iam_member" "run_admin_scoped" {
   }
 }
 
-resource "google_project_iam_member" "artifactregistry_writer_scoped" {
+# repoAdmin, not writer: the pipeline creates this repo itself (../artifact-registry), and
+# writer only covers push/pull to a repo that already exists — it has no repositories.create
+# permission.
+resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   project = var.project_id
-  role    = "roles/artifactregistry.writer"
+  role    = "roles/artifactregistry.repoAdmin"
   member  = module.deploy_service_account.iam_email
 
   condition {
     title       = "${var.artifact_registry_repo}-only"
-    description = "Restricts roles/artifactregistry.writer to the ${var.artifact_registry_repo} Artifact Registry repo only."
+    description = "Restricts roles/artifactregistry.repoAdmin to the ${var.artifact_registry_repo} Artifact Registry repo only."
     expression  = "resource.type == \"artifactregistry.googleapis.com/Repository\" && resource.name == \"projects/${var.project_id}/locations/${var.region}/repositories/${var.artifact_registry_repo}\""
+  }
+}
+
+# roles/serviceusage.serviceUsageAdmin can't be scoped to a single resource the way run.admin
+# and artifactregistry.repoAdmin are above — service enablement isn't tied to one service the
+# way a Cloud Run service or AR repo is. The narrowest available control is an IAM Condition
+# listing exactly the services enable_apis_services names, so the pipeline can enable/disable
+# only the specific APIs this repo declares, not arbitrary services on the project.
+resource "google_project_iam_member" "serviceusage_admin_scoped" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageAdmin"
+  member  = module.deploy_service_account.iam_email
+
+  condition {
+    title       = "enable-apis-services-only"
+    description = "Restricts roles/serviceusage.serviceUsageAdmin to the services ../enable-apis declares."
+    expression = format(
+      "resource.type == \"serviceusage.googleapis.com/Service\" && resource.name in [%s]",
+      join(", ", [for service in var.enable_apis_services : "\"projects/${var.project_id}/services/${service}\""]),
+    )
   }
 }
 

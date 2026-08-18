@@ -1,12 +1,3 @@
-module "artifact_registry" {
-  source = "../../modules/artifact-registry"
-
-  project_id    = var.project_id
-  location      = var.region
-  repository_id = var.artifact_registry_repo
-  description   = "invoice-sync Cloud Run images, built and pushed by the deploy pipeline."
-}
-
 module "cloud_run" {
   source = "../../modules/cloud-run"
 
@@ -14,7 +5,9 @@ module "cloud_run" {
   service_name = var.service_name
   location     = var.region
 
-  image = "${module.artifact_registry.image_prefix}/invoice-sync:${var.image_tag}"
+  # The repo itself lives in ../artifact-registry's own state — it has to exist before the
+  # pipeline's docker push, so it's applied ahead of this stack rather than created here.
+  image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repo}/invoice-sync:${var.image_tag}"
 
   # Only traffic that has passed through the load balancer (or is already inside the VPC) is
   # let in — *.run.app direct access is refused, so module.lb is the only public entry point.

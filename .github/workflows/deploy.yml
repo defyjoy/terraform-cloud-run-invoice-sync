@@ -32,6 +32,21 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      # Same tasks a human runs locally — PROJECT_ID/STATE_BUCKET (job env, above) reach
+      # Taskfile.yml's -backend-config via Task's automatic env-var pickup, see CLAUDE.md.
+      - name: Enable APIs and ensure the Artifact Registry repo exists
+        run: |
+          ACTION=apply task enable-apis
+          ACTION=apply task artifact-registry
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
@@ -42,15 +57,5 @@ jobs:
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.8"
-
-      - uses: arduino/setup-task@v2
-        with:
-          version: "3.x"
-
-      # Same task a human runs locally — PROJECT_ID/STATE_BUCKET (job env, above) reach
-      # Taskfile.yml's -backend-config via Task's automatic env-var pickup, see CLAUDE.md.
-      - name: Deploy via Taskfile
+      - name: Deploy invoice-sync
         run: ACTION=apply task invoice-sync -- -var image_tag=${{ github.sha }}

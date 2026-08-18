@@ -77,7 +77,7 @@ Rules for working on this repo's Terraform. These override default behavior.
   name (`projects/<id>/locations/<region>/services/<name>`, `.../repositories/<id>`, etc.) is
   deterministic and doesn't require the target resource to exist, so the grant can be scoped
   from the start (see `modules/github-actions-wif`'s `run_admin_scoped` /
-  `artifactregistry_writer_scoped`). Same for Secret Manager access: grant per-secret via
+  `artifactregistry_admin_scoped`). Same for Secret Manager access: grant per-secret via
   `google_secret_manager_secret_iam_member`, never a project-wide
   `roles/secretmanager.secretAccessor` (see `modules/cloud-run`'s `secret_accessor_secrets`,
   which defaults to zero grants).
@@ -85,3 +85,16 @@ Rules for working on this repo's Terraform. These override default behavior.
   resource-scoped binding for that same permission already exists elsewhere in the stack. Don't
   grant the same effective access twice at different scopes — the broader one just widens blast
   radius for no benefit.
+- `roles/serviceusage.serviceUsageAdmin` (`modules/github-actions-wif`'s
+  `serviceusage_admin_scoped`, needed for the pipeline to apply `enable-apis`) is the one grant
+  in this repo that can't be scoped to a single resource the way everything above can — service
+  enablement has no per-API resource the way a Cloud Run service or AR repo does. The narrowest
+  available control is an IAM Condition listing the exact service names `enable_apis_services`
+  declares (must match `live/enable-apis`'s own `services` list). This was an explicit,
+  discussed trade-off (see README's "Pipeline stages and privileges"), not a default — don't
+  extend this pattern to other roles just because it exists here, and don't widen the condition
+  to more services than `enable-apis` actually needs without the same discussion.
+- Creating (not just writing to) an Artifact Registry repo needs `roles/artifactregistry.admin`
+  or `.repoAdmin` — `.writer` only grants push/pull to a repo that already exists, it has no
+  `repositories.create`/`.delete`. Don't reach for `.writer` when the caller is the one
+  provisioning the repo.

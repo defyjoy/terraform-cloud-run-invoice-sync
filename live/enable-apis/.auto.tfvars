@@ -14,4 +14,5 @@ services = [
   "logging.googleapis.com",          # roles/logging.logWriter, log-based alert condition
   "cloudtrace.googleapis.com",       # roles/cloudtrace.agent
   "storage.googleapis.com",          # Terraform state bucket access
+  "serviceusage.googleapis.com",     # the pipeline enabling/managing this very list
 ]

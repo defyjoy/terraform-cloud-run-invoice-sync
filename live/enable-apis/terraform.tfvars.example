@@ -16,4 +16,5 @@ services = [
   "logging.googleapis.com",
   "cloudtrace.googleapis.com",
   "storage.googleapis.com",
+  "serviceusage.googleapis.com",
 ]

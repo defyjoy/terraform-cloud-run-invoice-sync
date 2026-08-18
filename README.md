@@ -8,42 +8,68 @@ when a deployed revision fails to become ready.
 ```
 modules/
 ├── enable-apis/              wraps google_project_service, generic across projects
+├── artifact-registry/        wraps google_artifact_registry_repository
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
 └── serverless-lb/            copied from defyjoy/google-cloud-terraform, unchanged
 live/
-├── enable-apis/          service APIs this repo's stacks need — its own state, bootstrap
+├── enable-apis/          service APIs this repo's stacks need — its own state
 ├── github-actions-wif/   the deploy identity — its own state, applied by hand once (bootstrap)
-└── invoice-sync/         the service, Artifact Registry repo, load balancer, and failure
-                           alerting — applied by the pipeline from then on
+├── artifact-registry/    the invoice-sync image repo — its own state, applied ahead of
+│                         docker push, since it has to exist before the pipeline can push to it
+└── invoice-sync/         the service, load balancer, and failure alerting
 .github/
 └── workflows/
-    └── deploy.yml    build image -> push -> `task invoice-sync` (same task a human runs)
+    └── deploy.yml    enable-apis + artifact-registry -> build -> push -> `task invoice-sync`
 ```
 
 Each root module holds separate state:
-`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|invoice-sync>`.
-`github-actions-wif` is split out from `invoice-sync` because it has to exist before the
-pipeline can authenticate at all — if it lived in the same state as the service, the very first
-apply of *everything* would have to run locally. Splitting it keeps that manual step to the
-smallest possible slice, and lets `invoice-sync` be applied via GitHub only, per this repo's
-`CLAUDE.md`. `enable-apis` is split out for the same reason: both other stacks need its APIs
-enabled before they can do anything.
+`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|invoice-sync>`.
+`github-actions-wif` is split out from the rest because it has to exist before the pipeline can
+authenticate at all — if it lived in the same state as anything the pipeline applies, the very
+first apply of *everything* would have to run locally. `enable-apis` and `artifact-registry` are
+split out because the pipeline applies them itself, on every run, ahead of whatever depends on
+them (image push needs the repo; nearly everything needs the APIs) — see
+[Pipeline stages and privileges](#pipeline-stages-and-privileges).
 
 `deploy.yml` never runs `terraform` directly — it installs Task and calls the exact same
-`task invoice-sync` a human would, so the init/backend-config/apply sequence lives in one place
+`task <name>` a human would, so the init/backend-config/apply sequence lives in one place
 (`Taskfile.yml`'s `_tf` task) instead of being duplicated as raw commands in the workflow. The
 backend bucket and prefix Task builds `-backend-config` from come from `PROJECT_ID`/
 `STATE_BUCKET`, which Task reads from the environment automatically — set once in `deploy.yml`'s
 job-level `env:`, not hardcoded a second time as literal `-backend-config` strings.
 
+## Pipeline stages and privileges
+
+`deploy.yml` runs four stages in order: `enable-apis` + `artifact-registry` (apply) → docker
+build → docker push → `invoice-sync` (apply). The first two are idempotent — after the first
+run they're no-ops — but running them every time means a newly-added API or a deleted repo
+self-heals on the next push, without a separate manual step.
+
+Doing this from the pipeline (rather than keeping `enable-apis`/`artifact-registry` local-only
+like `github-actions-wif`) means the deploy SA needs two grants broader than everything else it
+holds:
+- `roles/serviceusage.serviceUsageAdmin`, scoped via an IAM Condition to exactly the service
+  names `live/enable-apis`' own `services` list declares (`modules/github-actions-wif`'s
+  `enable_apis_services` var) — narrower than the project-wide default, but still whatever's on
+  that list, not one named resource the way `run.admin`/`artifactregistry.repoAdmin` are scoped.
+  Service enablement has no per-resource IAM story to scope down to a single API the way Cloud
+  Run services or Artifact Registry repos do.
+- `roles/artifactregistry.repoAdmin` (not `.writer`) on the invoice-sync repo, since creating
+  and deleting a repo needs `repositories.create`/`.delete`, which `.writer` doesn't grant.
+
+This was a deliberate choice, not an oversight — the alternative (keeping both local-only, pipeline
+touches only `invoice-sync`) has a strictly smaller privilege footprint. See `CLAUDE.md`'s IAM
+section for the reasoning either way.
+
 ## Usage
 
 ```bash
 task                             # list tasks
-task enable-apis                 # init + plan the service APIs (bootstrap only)
-task github-actions-wif          # init + plan the deploy identity (bootstrap only)
+task enable-apis                 # init + plan the service APIs (normally the pipeline's job)
+task github-actions-wif          # init + plan the deploy identity (bootstrap only, local)
+task artifact-registry           # init + plan the image repo (normally the pipeline's job)
 task invoice-sync                # init + plan the service (normally the pipeline's job)
 ACTION=apply task invoice-sync   # init + apply
 ```
@@ -62,12 +88,11 @@ task invoice-sync -- -var image_tag=<git-sha>
 
 The GitHub Actions pipeline authenticates via Workload Identity Federation, but the pool,
 provider and deploy service account it authenticates as are themselves Terraform-managed — they
-can't exist before the first apply, and the pipeline can't authenticate before they exist. So,
-before the pipeline can deploy anything:
+can't exist before the first apply, and the pipeline can't authenticate before they exist. And
+`github-actions-wif` itself can't apply without APIs (`iam`, `sts`, `cloudresourcemanager`, ...)
+that this project doesn't enable by default. So, before the pipeline can deploy anything:
 
-0. Apply `enable-apis` locally first — `github-actions-wif` and `invoice-sync` both fail without
-   `run.googleapis.com`, `sts.googleapis.com` and `cloudresourcemanager.googleapis.com` enabled,
-   none of which this project enables by default:
+0. Apply `enable-apis` locally first, the one time it can't yet run in the pipeline:
    ```bash
    ACTION=apply task enable-apis
    ```
@@ -77,6 +102,9 @@ before the pipeline can deploy anything:
    ```
    This is the *only* stack meant to be applied outside the pipeline — it never needs an image
    tag or a running Cloud Run service, so there's no bootstrap placeholder value needed anywhere.
+   `enable-apis` and `artifact-registry` don't need a separate manual apply beyond step 0: once
+   `github-actions-wif` exists and its outputs are set as repo variables (step 3), the pipeline
+   applies both itself on every run.
 2. Read its outputs:
    ```bash
    terraform -chdir=live/github-actions-wif output -raw workload_identity_provider

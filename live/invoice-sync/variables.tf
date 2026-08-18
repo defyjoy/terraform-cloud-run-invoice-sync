@@ -14,7 +14,7 @@ variable "service_name" {
 }
 
 variable "artifact_registry_repo" {
-  description = "ID of the Artifact Registry Docker repo images are pushed to."
+  description = "ID of the Artifact Registry Docker repo images are pushed to. Must match ../artifact-registry's own repository_id — that stack creates it, this one only references it by name."
   type        = string
 }
 
