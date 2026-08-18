@@ -117,33 +117,6 @@ resource "google_project_iam_member" "deploy_sa_roles" {
   }
 }
 
-# Preserves the pre-refactor resource addresses' real IAM bindings instead of destroying and
-# recreating each one under the new for_each key.
-moved {
-  from = google_project_iam_member.run_admin_scoped
-  to   = google_project_iam_member.deploy_sa_roles["run_admin_scoped"]
-}
-moved {
-  from = google_project_iam_member.artifactregistry_admin
-  to   = google_project_iam_member.deploy_sa_roles["artifactregistry_admin"]
-}
-moved {
-  from = google_project_iam_member.compute_network_admin
-  to   = google_project_iam_member.deploy_sa_roles["compute_network_admin"]
-}
-moved {
-  from = google_project_iam_member.compute_security_admin
-  to   = google_project_iam_member.deploy_sa_roles["compute_security_admin"]
-}
-moved {
-  from = google_project_iam_member.vpcaccess_admin
-  to   = google_project_iam_member.deploy_sa_roles["vpcaccess_admin"]
-}
-moved {
-  from = google_project_iam_member.service_account_creator
-  to   = google_project_iam_member.deploy_sa_roles["service_account_creator"]
-}
-
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
 # equivalent to a key file but without one ever existing.
 #
