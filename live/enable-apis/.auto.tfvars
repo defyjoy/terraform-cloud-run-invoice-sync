@@ -15,4 +15,5 @@ services = [
   "cloudtrace.googleapis.com",       # roles/cloudtrace.agent
   "storage.googleapis.com",          # Terraform state bucket access
   "serviceusage.googleapis.com",     # the pipeline enabling/managing this very list
+  "vpcaccess.googleapis.com",        # Serverless VPC Access connector for invoice-sync
 ]
