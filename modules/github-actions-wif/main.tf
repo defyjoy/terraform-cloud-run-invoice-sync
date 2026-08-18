@@ -58,14 +58,16 @@ resource "google_project_iam_member" "run_admin_scoped" {
 
 resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   project = var.project_id
-  role    = "roles/artifactregistry.repoAdmin"
+  role    = "roles/artifactregistry.admin"
   member  = module.deploy_service_account.iam_email
 
-  # Matches the parent location too, not just the repo name — see CLAUDE.md's IAM section on
-  # why create calls need that.
+  # roles/artifactregistry.admin, not .repoAdmin: .repoAdmin has no repositories.create/.delete
+  # at all, only content-level permissions on a repo that already exists — see CLAUDE.md's IAM
+  # section. Also matches the parent location, not just the repo name, since create calls check
+  # the parent.
   condition {
     title       = "${var.artifact_registry_repo}-only"
-    description = "Restricts roles/artifactregistry.repoAdmin to the ${var.artifact_registry_repo} Artifact Registry repo only."
+    description = "Restricts roles/artifactregistry.admin to the ${var.artifact_registry_repo} Artifact Registry repo only."
     expression  = <<-EOT
       resource.type == "artifactregistry.googleapis.com/Repository" && (
         resource.name == "projects/${var.project_id}/locations/${var.region}" ||

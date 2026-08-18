@@ -95,9 +95,10 @@ Rules for working on this repo's Terraform. These override default behavior.
   API is needed, add it to `live/enable-apis` and apply it locally, the same as any other
   bootstrap change.
 - Creating (not just writing to) an Artifact Registry repo needs `roles/artifactregistry.admin`
-  or `.repoAdmin` — `.writer` only grants push/pull to a repo that already exists, it has no
-  `repositories.create`/`.delete`. Don't reach for `.writer` when the caller is the one
-  provisioning the repo.
+  specifically — confirmed via `gcloud iam roles describe`: `.repoAdmin` has no
+  `repositories.create`/`.delete` at all (it's content/IAM management on a repo that already
+  exists), and `.writer` only grants push/pull. Don't reach for either when the caller is the
+  one provisioning the repo.
 - A `create` call for a resource that doesn't exist yet is authorized against the *parent*
   (its location, in `run_admin_scoped`/`artifactregistry_admin_scoped`'s case), not the
   resource's own `resource.name` — confirmed by a real 403
