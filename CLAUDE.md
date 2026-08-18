@@ -53,3 +53,11 @@ Rules for working on this repo's Terraform. These override default behavior.
   conditions, service account key file creation — stop and ask the user why it's needed instead
   of just applying it. Propose the narrower alternative that would satisfy the actual use case
   first.
+- IAM bindings are always additive (`google_*_iam_member`), never authoritative
+  (`google_*_iam_binding`/`_policy`). Authoritative resources overwrite the entire policy for a
+  role (or resource), silently dropping any binding not declared in that exact Terraform config
+  — including ones added by hand, by another stack, or by a module using a different mode.
+  `terraform-google-modules/iam`'s submodules default to additive and are fine to use where
+  that mode actually works; if the only way to make a binding fit the module is switching it to
+  `mode = "authoritative"`, don't — write the raw `_member` resource instead, even though the
+  module has that escape hatch.
