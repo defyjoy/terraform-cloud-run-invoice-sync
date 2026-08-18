@@ -97,6 +97,14 @@ locals {
       role      = "roles/iam.serviceAccountCreator"
       condition = null
     }
+
+    # Needed to read the Cloud Run runtime SA's IAM policy before ../invoice-sync's
+    # google_service_account_iam_member (service_account_users) can update it -
+    # .serviceAccountViewer grants get/list/getIamPolicy only, no write permissions.
+    service_account_viewer = {
+      role      = "roles/iam.serviceAccountViewer"
+      condition = null
+    }
   }
 }
 
