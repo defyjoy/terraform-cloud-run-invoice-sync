@@ -85,22 +85,15 @@ Rules for working on this repo's Terraform. These override default behavior.
   resource-scoped binding for that same permission already exists elsewhere in the stack. Don't
   grant the same effective access twice at different scopes — the broader one just widens blast
   radius for no benefit.
-- `roles/serviceusage.serviceUsageAdmin` (`modules/github-actions-wif`'s
-  `serviceusage_admin_scoped`, needed for the pipeline to apply `enable-apis`) is the one grant
-  in this repo that can't be scoped to a single resource the way everything above can — service
-  enablement has no per-API resource the way a Cloud Run service or AR repo does. The narrowest
-  available control is an IAM Condition listing the exact service names `enable_apis_services`
-  declares (must match `live/enable-apis`'s own `services` list). This was an explicit,
-  discussed trade-off (see README's "Pipeline stages and privileges"), not a default — don't
-  extend this pattern to other roles just because it exists here, and don't widen the condition
-  to more services than `enable-apis` actually needs without the same discussion.
-  `google_project_service`'s state refresh calls `serviceusage.services.list`, which is
-  authorized against the project container, not individual services — confirmed via a real
-  403 ("Permission denied to list services for consumer container") when the conditioned Admin
-  grant above was the only one present. No `resource.name`-scoped condition can satisfy a List
-  call, so `serviceusage_viewer` (read-only, unconditioned, project-wide) exists alongside it —
-  keep both: don't drop the condition on Admin to work around this, and don't skip Viewer next
-  time this same pattern comes up for another List-heavy API.
+- `enable-apis` is bootstrap-only, applied locally with the operator's own credentials, and the
+  pipeline never touches it — `roles/serviceusage.*` has no way to scope down to individual
+  services (`serviceusage.googleapis.com/Service` resource names use the project *number*, not
+  the project ID, which broke an earlier attempt at an IAM-Condition-scoped
+  `serviceUsageAdmin` grant; `services.list` also can't be scoped at all, since it's authorized
+  against the whole project container). Granting the deploy SA project-wide `serviceUsageAdmin`
+  just to let the pipeline self-heal newly-added APIs isn't worth that blast radius — if a new
+  API is needed, add it to `live/enable-apis` and apply it locally, the same as any other
+  bootstrap change.
 - Creating (not just writing to) an Artifact Registry repo needs `roles/artifactregistry.admin`
   or `.repoAdmin` — `.writer` only grants push/pull to a repo that already exists, it has no
   `repositories.create`/`.delete`. Don't reach for `.writer` when the caller is the one

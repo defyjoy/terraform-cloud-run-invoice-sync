@@ -42,8 +42,3 @@ variable "artifact_registry_repo" {
   description = "ID of ../invoice-sync's Artifact Registry repo (created by ../artifact-registry). Must match both those stacks' own artifact_registry_repo/repository_id — scopes the deploy SA's roles/artifactregistry.repoAdmin grant to just this repo."
   type        = string
 }
-
-variable "enable_apis_services" {
-  description = "Service names the deploy SA is allowed to enable/disable. Must match ../enable-apis's own services list exactly."
-  type        = set(string)
-}

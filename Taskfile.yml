@@ -16,7 +16,7 @@ tasks:
       - task --list
 
   enable-apis:
-    desc: 'Service APIs this repo needs across the project — bootstrap only, apply this before github-actions-wif or invoice-sync (ACTION=plan|apply|destroy, default plan)'
+    desc: 'Service APIs this repo needs across the project — bootstrap only, applied locally, never by the pipeline (ACTION=plan|apply|destroy, default plan)'
     cmds:
       - task: _tf
         vars: { DIR: '{{.ROOT}}/enable-apis' }

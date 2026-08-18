@@ -50,11 +50,6 @@ variable "artifact_registry_repo" {
   type        = string
 }
 
-variable "enable_apis_services" {
-  description = "Service names (e.g. \"run.googleapis.com\") roles/serviceusage.serviceUsageAdmin is scoped to via an IAM Condition — should match ../enable-apis's own services list exactly, so the deploy SA can enable/disable exactly what that stack declares and nothing else."
-  type        = set(string)
-}
-
 variable "state_bucket" {
   description = "GCS bucket to grant the deploy service account roles/storage.objectAdmin on, so it can run terraform init/apply itself."
   type        = string

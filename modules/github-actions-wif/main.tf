@@ -1,7 +1,3 @@
-data "google_project" "this" {
-  project_id = var.project_id
-}
-
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = var.pool_id
@@ -63,30 +59,6 @@ resource "google_project_iam_member" "artifactregistry_admin_scoped" {
     description = "Restricts roles/artifactregistry.repoAdmin to the ${var.artifact_registry_repo} Artifact Registry repo only."
     expression  = "resource.type == \"artifactregistry.googleapis.com/Repository\" && resource.name == \"projects/${var.project_id}/locations/${var.region}/repositories/${var.artifact_registry_repo}\""
   }
-}
-
-resource "google_project_iam_member" "serviceusage_admin_scoped" {
-  project = var.project_id
-  role    = "roles/serviceusage.serviceUsageAdmin"
-  member  = module.deploy_service_account.iam_email
-
-  condition {
-    title       = "enable-apis-services-only"
-    description = "Restricts roles/serviceusage.serviceUsageAdmin to the services ../enable-apis declares."
-    expression = format(
-      "resource.type == \"serviceusage.googleapis.com/Service\" && resource.name in [%s]",
-      join(", ", [for service in var.enable_apis_services : "\"projects/${data.google_project.this.number}/services/${service}\""]),
-    )
-  }
-}
-
-# Required alongside serviceusage_admin_scoped above, not a duplicate of it: services.list is
-# authorized against the whole project, not a resource.name the condition above can match, so
-# it needs its own unconditioned (but read-only) grant. See CLAUDE.md's IAM section.
-resource "google_project_iam_member" "serviceusage_viewer" {
-  project = var.project_id
-  role    = "roles/serviceusage.serviceUsageViewer"
-  member  = module.deploy_service_account.iam_email
 }
 
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —

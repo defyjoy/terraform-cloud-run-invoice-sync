@@ -11,20 +11,3 @@ deploy_account_id = "github-deployer"
 
 cloud_run_service_name = "invoice-sync"
 artifact_registry_repo = "invoice-sync"
-
-enable_apis_services = [
-  "run.googleapis.com",
-  "artifactregistry.googleapis.com",
-  "compute.googleapis.com",
-  "iam.googleapis.com",
-  "iamcredentials.googleapis.com",
-  "sts.googleapis.com",
-  "cloudresourcemanager.googleapis.com",
-  "secretmanager.googleapis.com",
-  "pubsub.googleapis.com",
-  "monitoring.googleapis.com",
-  "logging.googleapis.com",
-  "cloudtrace.googleapis.com",
-  "storage.googleapis.com",
-  "serviceusage.googleapis.com",
-]

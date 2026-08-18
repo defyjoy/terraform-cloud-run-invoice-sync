@@ -21,17 +21,18 @@ live/
 └── invoice-sync/         the service, load balancer, and failure alerting
 .github/
 └── workflows/
-    └── deploy.yml    enable-apis + artifact-registry -> build -> push -> `task invoice-sync`
+    └── deploy.yml    artifact-registry -> build -> push -> `task invoice-sync`
 ```
 
 Each root module holds separate state:
 `gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|invoice-sync>`.
-`github-actions-wif` is split out from the rest because it has to exist before the pipeline can
-authenticate at all — if it lived in the same state as anything the pipeline applies, the very
-first apply of *everything* would have to run locally. `enable-apis` and `artifact-registry` are
-split out because the pipeline applies them itself, on every run, ahead of whatever depends on
-them (image push needs the repo; nearly everything needs the APIs) — see
-[Pipeline stages and privileges](#pipeline-stages-and-privileges).
+`enable-apis` and `github-actions-wif` are both bootstrap-only, applied locally with the
+operator's own credentials, and never touched by the pipeline — `github-actions-wif` because it
+has to exist before the pipeline can authenticate at all, and `enable-apis` because
+`roles/serviceusage.*` has no way to scope down to individual services (see CLAUDE.md's IAM
+section), so granting the deploy SA project-wide service-enablement access isn't worth the blast
+radius. `artifact-registry` is split into its own stack because the pipeline applies it on every
+run, ahead of the image push that needs it to exist.
 
 `deploy.yml` never runs `terraform` directly — it installs Task and calls the exact same
 `task <name>` a human would, so the init/backend-config/apply sequence lives in one place
@@ -42,38 +43,23 @@ job-level `env:`, not hardcoded a second time as literal `-backend-config` strin
 
 ## Pipeline stages and privileges
 
-`deploy.yml` runs four stages in order: `enable-apis` + `artifact-registry` (apply) → docker
-build → docker push → `invoice-sync` (apply). The first two are idempotent — after the first
-run they're no-ops — but running them every time means a newly-added API or a deleted repo
-self-heals on the next push, without a separate manual step.
+`deploy.yml` runs three stages in order: `artifact-registry` (apply) → docker build → docker
+push → `invoice-sync` (apply). `artifact-registry` runs every time — it's idempotent, a no-op
+once the repo exists — so a deleted repo self-heals on the next push without a separate manual
+step.
 
-Doing this from the pipeline (rather than keeping `enable-apis`/`artifact-registry` local-only
-like `github-actions-wif`) means the deploy SA needs three grants broader than everything else
-it holds:
-- `roles/serviceusage.serviceUsageAdmin`, scoped via an IAM Condition to exactly the service
-  names `live/enable-apis`' own `services` list declares (`modules/github-actions-wif`'s
-  `enable_apis_services` var) — narrower than the project-wide default, but still whatever's on
-  that list, not one named resource the way `run.admin`/`artifactregistry.repoAdmin` are scoped.
-  Service enablement has no per-resource IAM story to scope down to a single API the way Cloud
-  Run services or Artifact Registry repos do.
-- `roles/serviceusage.serviceUsageViewer`, unconditioned and project-wide (read-only). Required
-  in addition to the scoped Admin grant above — confirmed by a real 403
-  ("Permission denied to list services for consumer container") the first time this pipeline
-  ran with only the conditioned grant. `google_project_service`'s state refresh calls
-  `serviceusage.services.list`, which is authorized against the whole project, not any single
-  service, so no `resource.name`-scoped condition can grant it.
-- `roles/artifactregistry.repoAdmin` (not `.writer`) on the invoice-sync repo, since creating
-  and deleting a repo needs `repositories.create`/`.delete`, which `.writer` doesn't grant.
+This means the deploy SA needs one grant broader than a single named resource:
+`roles/artifactregistry.repoAdmin` (not `.writer`) on the invoice-sync repo, since creating and
+deleting a repo needs `repositories.create`/`.delete`, which `.writer` doesn't grant.
 
-This was a deliberate choice, not an oversight — the alternative (keeping both local-only, pipeline
-touches only `invoice-sync`) has a strictly smaller privilege footprint. See `CLAUDE.md`'s IAM
-section for the reasoning either way.
+`enable-apis` is deliberately kept local-only, unlike `artifact-registry` — see CLAUDE.md's IAM
+section for why `roles/serviceusage.*` doesn't scope down the same way.
 
 ## Usage
 
 ```bash
 task                             # list tasks
-task enable-apis                 # init + plan the service APIs (normally the pipeline's job)
+task enable-apis                 # init + plan the service APIs (bootstrap only, local)
 task github-actions-wif          # init + plan the deploy identity (bootstrap only, local)
 task artifact-registry           # init + plan the image repo (normally the pipeline's job)
 task invoice-sync                # init + plan the service (normally the pipeline's job)
@@ -98,7 +84,8 @@ can't exist before the first apply, and the pipeline can't authenticate before t
 `github-actions-wif` itself can't apply without APIs (`iam`, `sts`, `cloudresourcemanager`, ...)
 that this project doesn't enable by default. So, before the pipeline can deploy anything:
 
-0. Apply `enable-apis` locally first, the one time it can't yet run in the pipeline:
+0. Apply `enable-apis` locally, with your own `gcloud` credentials — the pipeline never applies
+   this stack (see CLAUDE.md's IAM section), so any newly-added API needs a re-run of this step:
    ```bash
    ACTION=apply task enable-apis
    ```
@@ -106,11 +93,11 @@ that this project doesn't enable by default. So, before the pipeline can deploy 
    ```bash
    ACTION=apply task github-actions-wif
    ```
-   This is the *only* stack meant to be applied outside the pipeline — it never needs an image
-   tag or a running Cloud Run service, so there's no bootstrap placeholder value needed anywhere.
-   `enable-apis` and `artifact-registry` don't need a separate manual apply beyond step 0: once
-   `github-actions-wif` exists and its outputs are set as repo variables (step 3), the pipeline
-   applies both itself on every run.
+   Both this and `enable-apis` are meant to be applied outside the pipeline only — neither needs
+   an image tag or a running Cloud Run service, so there's no bootstrap placeholder value needed
+   anywhere. `artifact-registry` doesn't need a separate manual apply: once `github-actions-wif`
+   exists and its outputs are set as repo variables (step 3), the pipeline applies it itself on
+   every run.
 2. Read its outputs:
    ```bash
    terraform -chdir=live/github-actions-wif output -raw workload_identity_provider
