@@ -15,6 +15,18 @@ module "cloud_run" {
 
   image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.invoice_sync.repository_id}/invoice-sync:${var.image_tag}"
 
+  # Only traffic that has passed through the load balancer (or is already inside the VPC) is
+  # let in — *.run.app direct access is refused, so module.lb is the only public entry point.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  vpc_access = {
+    egress = var.vpc_egress
+    network_interfaces = {
+      network    = var.network_name
+      subnetwork = var.subnetwork_name
+    }
+  }
+
   create_service_account = true
   service_account_project_roles = [
     "roles/logging.logWriter",
@@ -25,11 +37,25 @@ module "cloud_run" {
   min_instance_count = var.min_instance_count
   max_instance_count = var.max_instance_count
 
+  # Ingress already restricts the path in; this grants the load balancer's anonymous callers
+  # invoker access so it can actually reach the service.
+  members = ["allUsers"]
+
   deletion_protection = var.deletion_protection
 
   labels = {
     service = "invoice-sync"
   }
+}
+
+module "lb" {
+  source = "../../modules/serverless-lb"
+
+  project_id = var.project_id
+  name       = var.lb_name
+  region     = var.region
+
+  cloud_run_service_name = module.cloud_run.service_name
 }
 
 module "github_wif" {

@@ -12,6 +12,14 @@ notification_email = "you@example.com"
 # max_instance_count  = 2
 # deletion_protection = true
 
+# Cloud Run is private (INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER) and reached only through
+# module.lb. Defaults point at the hub VPC created by the google-cloud-terraform repo's
+# live/hub/vpc — override if that stack isn't reused.
+# network_name    = "yeti-hub-vpc"
+# subnetwork_name = "yeti-hub-run-us-central1-0"
+# vpc_egress      = "PRIVATE_RANGES_ONLY"
+# lb_name         = "invoice-sync-lb"
+
 # image_tag has no default — the pipeline always passes -var image_tag=<git sha>.
 # For a one-off local apply before the pipeline exists, pass it on the CLI instead of setting
 # it here, e.g. task invoice-sync ACTION=apply -- -var image_tag=bootstrap.

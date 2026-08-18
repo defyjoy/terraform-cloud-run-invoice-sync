@@ -22,6 +22,35 @@ variable "artifact_registry_repo" {
   default     = "invoice-sync"
 }
 
+variable "network_name" {
+  description = "Name of the VPC Cloud Run's Direct VPC egress attaches to. Defaults to the hub VPC created by the google-cloud-terraform repo's live/hub/vpc; point elsewhere if that stack isn't reused."
+  type        = string
+  default     = "yeti-hub-vpc"
+}
+
+variable "subnetwork_name" {
+  description = "Name of network_name's Cloud Run Direct VPC egress subnet, one of live/hub/vpc's cloud_run_subnet_names output entries in the google-cloud-terraform repo."
+  type        = string
+  default     = "yeti-hub-run-us-central1-0"
+}
+
+variable "vpc_egress" {
+  description = "Which of the service's outbound traffic is routed through network_interfaces. PRIVATE_RANGES_ONLY sends only RFC1918 destinations through the VPC; ALL_TRAFFIC sends everything, including internet-bound traffic, through it (and Cloud NAT from there)."
+  type        = string
+  default     = "PRIVATE_RANGES_ONLY"
+
+  validation {
+    condition     = contains(["ALL_TRAFFIC", "PRIVATE_RANGES_ONLY"], var.vpc_egress)
+    error_message = "vpc_egress must be ALL_TRAFFIC or PRIVATE_RANGES_ONLY."
+  }
+}
+
+variable "lb_name" {
+  description = "Base name for the public load balancer's components."
+  type        = string
+  default     = "invoice-sync-lb"
+}
+
 variable "image_tag" {
   description = "Tag of the invoice-sync image to deploy, e.g. a git SHA. No default — the pipeline always passes this explicitly."
   type        = string
