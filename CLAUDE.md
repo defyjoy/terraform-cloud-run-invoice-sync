@@ -40,6 +40,16 @@ Rules for working on this repo's Terraform. These override default behavior.
   (`google-github-actions/auth@v2` + `modules/github-actions-wif`), scoped to the specific
   GitHub repo via `attribute_condition`. Never a service account key file, never a broad WIF
   pool without a repo-scoped condition.
+- Pipelines call `task <name>` (install via `arduino/setup-task`), never raw `terraform
+  init`/`plan`/`apply`. The init/backend-config/apply sequence lives once, in `Taskfile.yml`'s
+  `_tf` task — a pipeline hand-rolling the same commands is exactly the duplication the Taskfile
+  rule above exists to prevent, just one layer further out.
+- The backend bucket/prefix a pipeline needs are set via `PROJECT_ID`/`STATE_BUCKET` in the
+  job's environment, which Task's own variable resolution picks up automatically — the same
+  mechanism already relied on for `ACTION` (`ACTION=apply task invoice-sync`). Don't hardcode a
+  second literal `-backend-config` string in the workflow. This can't be done via `TF_VAR_*`
+  instead — that prefix only applies to declared root-module variables, never to backend
+  blocks, which don't accept variables at all.
 
 ## IAM
 
