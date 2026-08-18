@@ -54,10 +54,8 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
 }
 
 # The pipeline runs terraform init/apply itself, so its deploy service account needs write
-# access to the state bucket. Skipped entirely when no bucket is given.
+# access to the state bucket.
 resource "google_storage_bucket_iam_member" "deploy_can_write_state" {
-  count = var.state_bucket != null ? 1 : 0
-
   bucket = var.state_bucket
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${module.deploy_service_account.email}"
