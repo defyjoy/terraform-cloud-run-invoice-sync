@@ -42,10 +42,20 @@ resource "google_project_iam_member" "run_admin_scoped" {
   role    = "roles/run.admin"
   member  = module.deploy_service_account.iam_email
 
+  # services.create is authorized against the parent location, not the (not yet existing)
+  # service — so the condition has to match either, or the first-ever deploy 403s the same way
+  # artifactregistry_admin_scoped's create call did. Once the service exists, every other
+  # run.admin call (get/update/delete/setIamPolicy) checks the service's own resource.name, which
+  # the second branch covers.
   condition {
     title       = "${var.cloud_run_service_name}-only"
     description = "Restricts roles/run.admin to the ${var.cloud_run_service_name} Cloud Run service only."
-    expression  = "resource.type == \"run.googleapis.com/Service\" && resource.name == \"projects/${var.project_id}/locations/${var.region}/services/${var.cloud_run_service_name}\""
+    expression  = <<-EOT
+      resource.type == "run.googleapis.com/Service" && (
+        resource.name == "projects/${var.project_id}/locations/${var.region}" ||
+        resource.name == "projects/${var.project_id}/locations/${var.region}/services/${var.cloud_run_service_name}"
+      )
+    EOT
   }
 }
 
@@ -54,10 +64,20 @@ resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   role    = "roles/artifactregistry.repoAdmin"
   member  = module.deploy_service_account.iam_email
 
+  # repositories.create is authorized against the parent location, not the (not yet existing)
+  # repo — confirmed by a real 403 ("Permission 'artifactregistry.repositories.create' denied on
+  # resource '.../locations/<region>'") when the condition only matched the repo's own name.
+  # Once the repo exists, every other repoAdmin call checks the repo's own resource.name, which
+  # the second branch covers.
   condition {
     title       = "${var.artifact_registry_repo}-only"
     description = "Restricts roles/artifactregistry.repoAdmin to the ${var.artifact_registry_repo} Artifact Registry repo only."
-    expression  = "resource.type == \"artifactregistry.googleapis.com/Repository\" && resource.name == \"projects/${var.project_id}/locations/${var.region}/repositories/${var.artifact_registry_repo}\""
+    expression  = <<-EOT
+      resource.type == "artifactregistry.googleapis.com/Repository" && (
+        resource.name == "projects/${var.project_id}/locations/${var.region}" ||
+        resource.name == "projects/${var.project_id}/locations/${var.region}/repositories/${var.artifact_registry_repo}"
+      )
+    EOT
   }
 }
 

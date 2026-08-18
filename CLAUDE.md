@@ -98,3 +98,13 @@ Rules for working on this repo's Terraform. These override default behavior.
   or `.repoAdmin` — `.writer` only grants push/pull to a repo that already exists, it has no
   `repositories.create`/`.delete`. Don't reach for `.writer` when the caller is the one
   provisioning the repo.
+- A `create` call for a resource that doesn't exist yet is authorized against the *parent*
+  (its location, in `run_admin_scoped`/`artifactregistry_admin_scoped`'s case), not the
+  resource's own `resource.name` — confirmed by a real 403
+  (`artifactregistry.repositories.create` denied on `.../locations/<region>`, not the repo)
+  when the condition only matched the child resource. A single `resource.name == <child>` check
+  is not enough to let the deploy SA provision the resource in the first place; the condition
+  needs an `||` branch matching the parent location too, and the second branch stays needed
+  afterward for every non-create call, which does check the child's own `resource.name`. Same
+  class of gap as `services.list` above — don't assume a resource-scoped condition covers
+  creation just because it covers everything else.
