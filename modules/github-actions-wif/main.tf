@@ -40,16 +40,15 @@ module "deploy_service_account" {
 
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
 # equivalent to a key file but without one ever existing.
-module "workload_identity_binding" {
-  source  = "terraform-google-modules/iam/google//modules/service_accounts_iam"
-  version = "~> 8.2"
-
-  project          = var.project_id
-  service_accounts = [module.deploy_service_account.email]
-
-  bindings = {
-    "roles/iam.workloadIdentityUser" = [
-      "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_owner}/${var.github_repo}",
-    ]
-  }
+#
+# A plain resource, not the service_accounts_iam module: that module's for_each is built from
+# a set that includes this principalSet string, and google_iam_workload_identity_pool.github.name
+# (it embeds the project *number*, resolved by the API) is unknown until the pool is actually
+# created — for_each can't plan over a set with unknown members. A single resource has no such
+# restriction; an unknown attribute value on one resource is fine, it just applies in dependency
+# order.
+resource "google_service_account_iam_member" "workload_identity_binding" {
+  service_account_id = module.deploy_service_account.iam_email
+  role                = "roles/iam.workloadIdentityUser"
+  member              = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_owner}/${var.github_repo}"
 }
