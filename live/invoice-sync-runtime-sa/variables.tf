@@ -4,17 +4,12 @@ variable "project_id" {
 }
 
 variable "account_id" {
-  description = "Account ID (local part of the email). Must match the deterministic name modules/cloud-run's create_service_account = true would have generated (\"<service_name>-<region>-sa\") — ../invoice-sync references this account by that same deterministic email."
-  type        = string
-}
-
-variable "service_name" {
-  description = "Name of the Cloud Run service this account runs as. Must match ../invoice-sync's own service_name."
+  description = "Account ID (local part of the email). Must match the deterministic name ../invoice-sync's create_service_account = true actually generates (\"<service_name>-<region>-sa\") — this stack grants roles to that account, it doesn't create it."
   type        = string
 }
 
 variable "project_roles" {
-  description = "Project-level IAM roles granted to the service account. Must match ../invoice-sync's own service_account_project_roles expectations."
+  description = "Project-level IAM roles granted to the service account."
   type        = list(string)
 }
 

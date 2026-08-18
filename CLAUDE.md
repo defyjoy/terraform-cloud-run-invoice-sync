@@ -142,22 +142,27 @@ Rules for working on this repo's Terraform. These override default behavior.
   can silently never match, an unverified condition here was judged not worth risking on infra
   with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
   confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.
-- `live/invoice-sync-runtime-sa` (Cloud Run's runtime SA, its `roles/logging.logWriter`/
+- `live/invoice-sync-runtime-sa` (the Cloud Run runtime SA's `roles/logging.logWriter`/
   `roles/cloudtrace.agent` project roles, and the deploy SA's `roles/iam.serviceAccountUser`
-  grant on it) is bootstrap-only, applied locally, and never touched by the pipeline — same
-  reasoning as `enable-apis`, one level further: granting *any* role to a service account (via
-  `google_project_iam_member` for the project roles, or `google_service_account_iam_member` for
-  the actAs grant) requires `resourcemanager.projects.setIamPolicy` or
-  `iam.serviceAccounts.setIamPolicy`, and neither can be scoped down to "only this one grant" —
-  `roles/resourcemanager.projectIamAdmin` is Google's own narrowest role for the former, and it
-  grants the ability to rewrite the *entire* project's IAM policy (any role, to any member,
-  including granting itself Owner). Confirmed via `gcloud iam roles describe`, not assumed. This
-  was an explicit, discussed trade-off — the alternative (granting the deploy SA
-  `projectIamAdmin` + `iam.serviceAccountAdmin`) was rejected as too large a blast radius on a
-  shared project. `live/invoice-sync` only ever references the runtime SA by its deterministic
-  email (`create_service_account = false`), never creates or grants it anything itself. It does
-  still need `roles/iam.serviceAccountViewer` (`service_account_viewer`) to read that
-  externally-created SA — read-only, get/list/getIamPolicy, no write permissions.
+  grant on it — **not the account itself**, see below) is bootstrap-only, applied locally, and
+  never touched by the pipeline — same reasoning as `enable-apis`, one level further: granting
+  *any* role to a service account (via `google_project_iam_member` for the project roles, or
+  `google_service_account_iam_member` for the actAs grant) requires
+  `resourcemanager.projects.setIamPolicy` or `iam.serviceAccounts.setIamPolicy`, and neither can
+  be scoped down to "only this one grant" — `roles/resourcemanager.projectIamAdmin` is Google's
+  own narrowest role for the former, and it grants the ability to rewrite the *entire* project's
+  IAM policy (any role, to any member, including granting itself Owner). Confirmed via
+  `gcloud iam roles describe`, not assumed. This was an explicit, discussed trade-off — the
+  alternative (granting the deploy SA `projectIamAdmin` + `iam.serviceAccountAdmin`) was
+  rejected as too large a blast radius on a shared project.
+- Creating the runtime SA itself is a different, much narrower permission
+  (`iam.serviceAccounts.create`, via `roles/iam.serviceAccountCreator`) than granting it roles —
+  `../invoice-sync`'s `create_service_account = true` is fine for the pipeline to do; only the
+  *role-granting* half needs to live in the bootstrap-only stack above. Don't set
+  `create_service_account = false` again to "avoid" the IAM risk — that only forces
+  `invoice-sync-runtime-sa` into creating a second, competing account (or a fragile
+  cross-stack state migration) without removing any actual risk, since account creation was
+  never the risky part.
 - `roles/pubsub.editor` (`modules/github-actions-wif`'s `pubsub_editor`), for
   `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
   `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not

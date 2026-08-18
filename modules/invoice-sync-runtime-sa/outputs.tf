@@ -1,4 +1,4 @@
 output "email" {
-  description = "Email of the created service account."
-  value       = module.runtime_service_account.email
+  description = "Email of the service account these roles were granted to."
+  value       = local.email
 }

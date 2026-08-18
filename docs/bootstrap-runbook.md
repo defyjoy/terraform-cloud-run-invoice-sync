@@ -27,21 +27,37 @@ ACTION=apply task enable-apis
 ACTION=apply task github-actions-wif
 ```
 
-## 4. Apply `invoice-sync-runtime-sa` locally
+## 4. Set the pipeline's repo variables from github-actions-wif's outputs
 
-The pipeline never applies this stack either (granting roles to a service account needs
-project-wide or service-account-wide IAM-editing power that can't be scoped down — see
-CLAUDE.md's IAM section), so re-run this step by hand whenever the runtime SA's roles change.
+```bash
+gh variable set WIF_PROVIDER --body "$(terraform -chdir=live/github-actions-wif output -raw workload_identity_provider)"
+gh variable set DEPLOY_SA_EMAIL --body "$(terraform -chdir=live/github-actions-wif output -raw service_account_email)"
+```
+
+## 5. Trigger the pipeline once, expect it to fail
+
+Creates the runtime SA (`iam.serviceAccountCreator` is enough for that) but can't yet deploy
+Cloud Run with it — that needs step 6 first. The SA existing is all this step needs.
+
+```bash
+git commit --allow-empty -m "bootstrap: trigger first pipeline run" && git push
+```
+
+## 6. Apply `invoice-sync-runtime-sa` locally
+
+The pipeline never applies this stack (granting roles to a service account needs project-wide
+or service-account-wide IAM-editing power that can't be scoped down — see CLAUDE.md's IAM
+section), and it grants roles to the SA step 5 created rather than creating it itself, so it
+must run after step 5. Re-run by hand whenever the runtime SA's roles change.
 
 ```bash
 ACTION=apply task invoice-sync-runtime-sa
 ```
 
-## 5. Set the pipeline's repo variables from its outputs
+## 7. Re-run the pipeline
 
 ```bash
-gh variable set WIF_PROVIDER --body "$(terraform -chdir=live/github-actions-wif output -raw workload_identity_provider)"
-gh variable set DEPLOY_SA_EMAIL --body "$(terraform -chdir=live/github-actions-wif output -raw service_account_email)"
+gh workflow run deploy.yml
 ```
 
 ## Checks

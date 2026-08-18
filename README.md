@@ -9,7 +9,8 @@ when a deployed revision fails to become ready.
 modules/
 ├── enable-apis/              wraps google_project_service, generic across projects
 ├── artifact-registry/        wraps google_artifact_registry_repository
-├── invoice-sync-runtime-sa/  Cloud Run runtime SA + its project roles + deploy SA's actAs grant
+├── invoice-sync-runtime-sa/  project roles + deploy SA's actAs grant for the (already-created)
+│                             Cloud Run runtime SA
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
@@ -25,9 +26,11 @@ live/
 │                             terraform-google-modules/network/google, no wrapper module) —
 │                             its own state, applied ahead of invoice-sync, since Cloud Run's
 │                             vpc_access references it by name
-├── invoice-sync-runtime-sa/  the Cloud Run runtime service account — its own state, applied
-│                             by hand once (bootstrap)
-└── invoice-sync/             the service, load balancer, and failure alerting
+├── invoice-sync-runtime-sa/  the Cloud Run runtime SA's project roles + actAs grant (the
+│                             account itself is created by invoice-sync below) — its own
+│                             state, applied by hand once (bootstrap)
+└── invoice-sync/             the service (including its runtime SA), load balancer, and
+                              failure alerting
 .github/
 └── workflows/
     └── deploy.yml    artifact-registry + network -> build -> push -> `task invoice-sync`
@@ -107,16 +110,18 @@ via the environment: `PROJECT_ID=other-project STATE_BUCKET=other-bucket task in
 task invoice-sync -- -var image_tag=<git-sha>
 ```
 
-## Bootstrap: three stacks must be applied locally, once
+## Bootstrap
 
 The GitHub Actions pipeline authenticates via Workload Identity Federation, but the pool,
 provider and deploy service account it authenticates as are themselves Terraform-managed — they
 can't exist before the first apply, and the pipeline can't authenticate before they exist. And
 `github-actions-wif` itself can't apply without APIs (`iam`, `sts`, `cloudresourcemanager`, ...)
 that this project doesn't enable by default. Separately, the deploy SA can never be granted the
-project-wide (or service-account-wide) IAM-editing power needed to create the Cloud Run runtime
-SA's role grants itself — see CLAUDE.md's IAM section. So, before the pipeline can deploy
-anything:
+project-wide (or service-account-wide) IAM-editing power needed to grant the Cloud Run runtime
+SA's own roles itself — see CLAUDE.md's IAM section. `invoice-sync-runtime-sa` grants roles to
+that account rather than creating it, so it has to run *after* the account exists (created by
+`invoice-sync`'s own `create_service_account = true`) — this makes the very first deploy a
+two-pass bootstrap:
 
 0. Apply `enable-apis` locally, with your own `gcloud` credentials — the pipeline never applies
    this stack (see CLAUDE.md's IAM section), so any newly-added API needs a re-run of this step:
@@ -127,31 +132,31 @@ anything:
    ```bash
    ACTION=apply task github-actions-wif
    ```
-2. Apply `invoice-sync-runtime-sa` locally, with your own `gcloud` credentials — this creates
-   the Cloud Run runtime SA, grants it its project roles, and grants the deploy SA
-   `roles/iam.serviceAccountUser` on it:
-   ```bash
-   ACTION=apply task invoice-sync-runtime-sa
-   ```
-   All three of these are meant to be applied outside the pipeline only — none needs an image
-   tag or a running Cloud Run service, so there's no bootstrap placeholder value needed
-   anywhere. `artifact-registry`/`network` don't need a separate manual apply: once
-   `github-actions-wif` exists and its outputs are set as repo variables (step 4), the pipeline
-   applies both itself on every run.
-3. Read `github-actions-wif`'s outputs:
+2. Read its outputs and set them as GitHub repo variables (Settings → Secrets and variables →
+   Actions → Variables): `WIF_PROVIDER` and `DEPLOY_SA_EMAIL`.
    ```bash
    terraform -chdir=live/github-actions-wif output -raw workload_identity_provider
    terraform -chdir=live/github-actions-wif output -raw service_account_email
    ```
-4. Set them as GitHub repo variables (Settings → Secrets and variables → Actions → Variables):
-   `WIF_PROVIDER` and `DEPLOY_SA_EMAIL`.
-5. `live/invoice-sync` builds the runtime SA's email itself from `project_id` +
-   `runtime_service_account_id` — as long as both `invoice-sync-runtime-sa` and `invoice-sync`
-   `.auto.tfvars` set matching values (`account_id` / `runtime_service_account_id`), there's
-   nothing to copy from one stack's output into the other.
-6. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy
-   `invoice-sync` end to end — no further local applies required, unless the runtime SA's own
-   roles change (re-run step 2) or a new API is needed (re-run step 0).
+3. Push to `main` (or run `workflow_dispatch`) to trigger the pipeline's first run. **Expect it
+   to fail** — it creates the runtime SA (`iam.serviceAccountCreator` is enough for that) but
+   can't yet deploy Cloud Run with it, since nothing has granted the runtime SA its project
+   roles or the deploy SA actAs on it. That's fine; the SA existing is all this step needs.
+4. Apply `invoice-sync-runtime-sa` locally, with your own `gcloud` credentials — grants the
+   now-existing runtime SA its project roles and the deploy SA
+   `roles/iam.serviceAccountUser` on it:
+   ```bash
+   ACTION=apply task invoice-sync-runtime-sa
+   ```
+   `account_id` in that stack's `.auto.tfvars` must match the deterministic name
+   `invoice-sync`'s `create_service_account = true` actually generated
+   (`"<service_name>-<region>-sa"`) — check with
+   `gcloud iam service-accounts list --project=<project_id>` if unsure.
+5. Re-run the pipeline (push again, or re-run the failed workflow) — it should now deploy
+   `invoice-sync` end to end.
+6. From then on, every push builds, pushes and deploys automatically — no further local applies
+   required, unless the runtime SA's own roles change (re-run step 4) or a new API is needed
+   (re-run step 0).
 
 ## Deployment failure alerting
 

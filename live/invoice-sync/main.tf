@@ -20,12 +20,12 @@ module "cloud_run" {
     connector = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
   }
 
-  # ../invoice-sync-runtime-sa's own state creates this account and grants it its project
-  # roles plus the deploy SA's actAs — the pipeline's own deploy SA can't be scoped to do
-  # either safely (see that stack's main.tf and CLAUDE.md's IAM section), so this stack only
-  # references it by its deterministic email, same pattern as the VPC connector.
-  create_service_account = false
-  service_account        = "${var.runtime_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
+  # Creating the account itself only needs the narrow roles/iam.serviceAccountCreator, so the
+  # pipeline does that. Its project roles and the deploy SA's own actAs grant on it need
+  # setIamPolicy-class permissions that can't be scoped down — ../invoice-sync-runtime-sa
+  # grants those separately, applied locally, referencing this same account by its
+  # deterministic email. See CLAUDE.md's IAM section.
+  create_service_account = true
 
   # No secrets are used yet — the placeholder Hello World app doesn't read Secret Manager.
   # Add secret IDs here (not a project-wide role) once the real service names ones it needs.

@@ -43,11 +43,6 @@ variable "image_tag" {
   type        = string
 }
 
-variable "runtime_service_account_id" {
-  description = "Account ID (local part of the email) of the Cloud Run runtime service account created by ../invoice-sync-runtime-sa. Must match that stack's own account_id — the email is deterministic, so this stack doesn't need that stack's output."
-  type        = string
-}
-
 variable "notification_email" {
   description = "Address notified when a Cloud Run revision fails to become ready."
   type        = string

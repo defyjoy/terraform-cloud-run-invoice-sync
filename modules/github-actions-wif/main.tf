@@ -89,11 +89,13 @@ locals {
       condition = null
     }
 
-    # Needed to read the externally-created Cloud Run runtime SA (create_service_account =
-    # false in ../invoice-sync) — .serviceAccountViewer grants get/list/getIamPolicy only, no
-    # write permissions, the narrowest predefined role with iam.serviceAccounts.get.
-    service_account_viewer = {
-      role      = "roles/iam.serviceAccountViewer"
+    # roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
+    # create_service_account = true (the Cloud Run runtime SA). .serviceAccountCreator only
+    # grants create/get/list, not delete/update/setIamPolicy on every service account in the
+    # project — it has no access to grant the SA's project roles or actAs itself
+    # (../invoice-sync-runtime-sa does that separately, see CLAUDE.md's IAM section).
+    service_account_creator = {
+      role      = "roles/iam.serviceAccountCreator"
       condition = null
     }
   }

@@ -1,7 +1,6 @@
 project_id = "yeti-504903"
 
-account_id   = "invoice-sync-us-central1-sa"
-service_name = "invoice-sync"
+account_id = "invoice-sync-us-central1-sa"
 
 project_roles = [
   "roles/logging.logWriter",

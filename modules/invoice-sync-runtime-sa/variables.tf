@@ -4,12 +4,7 @@ variable "project_id" {
 }
 
 variable "account_id" {
-  description = "Account ID (local part of the email) for the service account. Must match the deterministic name modules/cloud-run's create_service_account = true would have generated (\"<service_name>-<region>-sa\", truncated to 27 chars), since live/invoice-sync references it by that same deterministic email."
-  type        = string
-}
-
-variable "service_name" {
-  description = "Name of the Cloud Run service this account runs as, used only in its display name."
+  description = "Account ID (local part of the email) of the service account. Must match the deterministic name ../invoice-sync's create_service_account = true actually generates (\"<service_name>-<region>-sa\", truncated to 27 chars) — this module grants roles to that account, it doesn't create it."
   type        = string
 }
 
