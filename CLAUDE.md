@@ -133,3 +133,10 @@ Rules for working on this repo's Terraform. These override default behavior.
   can silently never match, an unverified condition here was judged not worth risking on infra
   with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
   confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.
+- `roles/iam.serviceAccountCreator` (`modules/github-actions-wif`'s `service_account_creator`),
+  for `../invoice-sync`'s `create_service_account = true`. Deliberately not
+  `roles/iam.serviceAccountAdmin`: that role also grants delete/update/setIamPolicy on every
+  service account in the project (including the deploy SA's own, and anything from the other
+  repo), whereas `.serviceAccountCreator` grants only create/get/list. Same as the roles above,
+  granted project-wide since account creation is authorized against the project, not a
+  not-yet-existing account name.

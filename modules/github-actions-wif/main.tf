@@ -93,6 +93,18 @@ resource "google_project_iam_member" "vpcaccess_admin" {
   member  = module.deploy_service_account.iam_email
 }
 
+# roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
+# create_service_account = true (the Cloud Run runtime SA), and .serviceAccountCreator only
+# grants create/get/list, not delete/update/setIamPolicy on every service account in the
+# project — narrower than the admin role while still covering the one permission actually
+# needed. Project-wide and unconditioned for the same reason as the compute grants above:
+# account creation is authorized against the project, not a not-yet-existing account name.
+resource "google_project_iam_member" "service_account_creator" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountCreator"
+  member  = module.deploy_service_account.iam_email
+}
+
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
 # equivalent to a key file but without one ever existing.
 #

@@ -62,6 +62,9 @@ this repo, which is scoped to one named resource):
   This is a materially bigger blast radius than everything else here: `yeti-504903` also hosts
   the `google-cloud-terraform` repo's hub/dev VPCs, so the deploy SA can touch that networking
   too, not just this repo's own. Accepted as a discussed trade-off — see CLAUDE.md's IAM section.
+- `roles/iam.serviceAccountCreator`, for `invoice-sync`'s `create_service_account = true`
+  (the Cloud Run runtime SA) — narrower than `.serviceAccountAdmin`, which also grants
+  delete/update/setIamPolicy on every service account in the project.
 
 `enable-apis` is deliberately kept local-only, unlike `artifact-registry`/`network` — see
 CLAUDE.md's IAM section for why `roles/serviceusage.*` doesn't scope down the same way.
