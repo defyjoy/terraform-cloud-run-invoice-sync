@@ -45,12 +45,8 @@ module "cloud_run" {
   # invoker access so it can actually reach the service.
   members = ["allUsers"]
 
-  # The deploy service account itself lives in ../github-actions-wif's own state — it has to
-  # exist before this stack's pipeline can even authenticate, so it's applied by hand once,
-  # ahead of everything here. Its email is deterministic from project_id + deploy_account_id
-  # (must match that stack's own deploy_account_id), so there's nothing to copy from its output.
-  # This lets it deploy new revisions running as this service's own service account, without
-  # granting it iam.serviceAccountUser on the whole project.
+  # Lets ../github-actions-wif's deploy SA deploy new revisions running as this service's own
+  # service account, without granting it iam.serviceAccountUser on the whole project.
   service_account_users = ["serviceAccount:${var.deploy_account_id}@${var.project_id}.iam.gserviceaccount.com"]
 
   deletion_protection = var.deletion_protection

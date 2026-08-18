@@ -50,13 +50,7 @@ jobs:
         with:
           version: "3.x"
 
-      # Same task a human runs locally (`ACTION=apply task invoice-sync`) — the init +
-      # backend-config + apply sequence lives once, in Taskfile.yml's _tf task, not duplicated
-      # here as raw terraform commands. PROJECT_ID/STATE_BUCKET (this job's env, above) are
-      # picked up by Task automatically from the environment — same mechanism this repo's docs
-      # already rely on for ACTION (e.g. `ACTION=apply task invoice-sync`) — so the bucket and
-      # prefix Taskfile's _tf task builds -backend-config from are parameterized here, not
-      # hardcoded a second time. (Backend config can't be read from TF_VAR_* — Terraform only
-      # applies that prefix to declared root-module variables, never to backend blocks.)
+      # Same task a human runs locally — PROJECT_ID/STATE_BUCKET (job env, above) reach
+      # Taskfile.yml's -backend-config via Task's automatic env-var pickup, see CLAUDE.md.
       - name: Deploy via Taskfile
         run: ACTION=apply task invoice-sync -- -var image_tag=${{ github.sha }}
