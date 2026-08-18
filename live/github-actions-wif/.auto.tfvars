@@ -12,7 +12,6 @@ deploy_account_id = "github-deployer"
 cloud_run_service_name = "invoice-sync"
 artifact_registry_repo = "invoice-sync"
 
-# Must match ../enable-apis's own services list exactly.
 enable_apis_services = [
   "run.googleapis.com",
   "artifactregistry.googleapis.com",

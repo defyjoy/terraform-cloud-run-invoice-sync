@@ -37,13 +37,6 @@ module "deploy_service_account" {
   display_name = "Deploys ${var.github_owner}/${var.github_repo} via GitHub Actions (WIF, no key file)"
 }
 
-# roles/run.admin and roles/artifactregistry.writer can't be granted at the Cloud Run
-# service / Artifact Registry repo level with a plain resource-scoped binding, because
-# neither resource exists yet when this stack is first applied — it has to exist before
-# ../invoice-sync's pipeline can even authenticate. An IAM Condition gets the same effect:
-# the grant is project-level, but only usable against this one service/repo's resource name,
-# which is deterministic from cloud_run_service_name/artifact_registry_repo and doesn't
-# require the resource to already exist.
 resource "google_project_iam_member" "run_admin_scoped" {
   project = var.project_id
   role    = "roles/run.admin"
@@ -56,9 +49,6 @@ resource "google_project_iam_member" "run_admin_scoped" {
   }
 }
 
-# repoAdmin, not writer: the pipeline creates this repo itself (../artifact-registry), and
-# writer only covers push/pull to a repo that already exists — it has no repositories.create
-# permission.
 resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   project = var.project_id
   role    = "roles/artifactregistry.repoAdmin"
@@ -71,11 +61,6 @@ resource "google_project_iam_member" "artifactregistry_admin_scoped" {
   }
 }
 
-# roles/serviceusage.serviceUsageAdmin can't be scoped to a single resource the way run.admin
-# and artifactregistry.repoAdmin are above — service enablement isn't tied to one service the
-# way a Cloud Run service or AR repo is. The narrowest available control is an IAM Condition
-# listing exactly the services enable_apis_services names, so the pipeline can enable/disable
-# only the specific APIs this repo declares, not arbitrary services on the project.
 resource "google_project_iam_member" "serviceusage_admin_scoped" {
   project = var.project_id
   role    = "roles/serviceusage.serviceUsageAdmin"
@@ -91,14 +76,9 @@ resource "google_project_iam_member" "serviceusage_admin_scoped" {
   }
 }
 
-# google_project_service's refresh step calls serviceusage.services.list, not .get, to read
-# current state — confirmed via a real 403 ("Permission denied to list services for consumer
-# container") when serviceusage_admin_scoped above was the only grant. List is authorized
-# against the project container, not the individual service resources the condition above
-# checks resource.name against, so no resource.name-scoped condition can satisfy it — this one
-# has to be project-wide. Kept to the read-only Viewer role rather than dropping the condition
-# on Admin above, so the pipeline can see what's enabled project-wide but can still only
-# enable/disable the services enable_apis_services names.
+# Required alongside serviceusage_admin_scoped above, not a duplicate of it: services.list is
+# authorized against the whole project, not a resource.name the condition above can match, so
+# it needs its own unconditioned (but read-only) grant. See CLAUDE.md's IAM section.
 resource "google_project_iam_member" "serviceusage_viewer" {
   project = var.project_id
   role    = "roles/serviceusage.serviceUsageViewer"
