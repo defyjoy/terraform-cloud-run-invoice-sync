@@ -19,3 +19,13 @@ variable "state_bucket" {
   type        = string
   default     = "yeti-terraform-state-bucket"
 }
+
+variable "project_roles" {
+  description = "Project-level IAM roles granted to the deploy service account — least privilege for what ../invoice-sync's pipeline actually does: deploy Cloud Run revisions, push images, and act as the runtime service account."
+  type        = list(string)
+  default = [
+    "roles/run.admin",
+    "roles/artifactregistry.writer",
+    "roles/iam.serviceAccountUser",
+  ]
+}

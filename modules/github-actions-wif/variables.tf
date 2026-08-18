@@ -34,11 +34,6 @@ variable "deploy_account_id" {
 variable "project_roles" {
   description = "Project-level IAM roles granted to the deploy service account."
   type        = list(string)
-  default = [
-    "roles/run.admin",
-    "roles/artifactregistry.writer",
-    "roles/iam.serviceAccountUser",
-  ]
 }
 
 variable "state_bucket" {

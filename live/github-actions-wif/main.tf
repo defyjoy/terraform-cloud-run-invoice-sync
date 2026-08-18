@@ -4,9 +4,10 @@
 module "github_wif" {
   source = "../../modules/github-actions-wif"
 
-  project_id   = var.project_id
-  github_owner = var.github_owner
-  github_repo  = var.github_repo
+  project_id    = var.project_id
+  github_owner  = var.github_owner
+  github_repo   = var.github_repo
+  project_roles = var.project_roles
 
   # The pipeline runs terraform init/apply itself, so its deploy service account needs write
   # access to the shared state bucket (owned by the google-cloud-terraform repo, not this one).
