@@ -9,6 +9,13 @@ Rules for working on this repo's Terraform. These override default behavior.
   `INGRESS_TRAFFIC_ALL` on Cloud Run, no public Cloud SQL, no `0.0.0.0/0` ingress firewall
   rules, unless the user explicitly asks for an exception and understands what it opens up.
 
+## Module structure
+
+- `live/*` root modules only compose modules (`module` blocks, `data` sources, variables,
+  outputs) — no raw `resource` blocks. If a `live/` config needs a resource, add it to the
+  module that owns the concern it belongs to (or a new module, if none fits) and expose
+  whatever variable/output makes it configurable from `live/`, rather than declaring it inline.
+
 ## Taskfile
 
 - Every root Terraform module under `live/` gets a task in `Taskfile.yml` using the existing
