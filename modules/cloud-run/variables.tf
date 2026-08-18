@@ -168,6 +168,12 @@ variable "service_account_users" {
   default     = []
 }
 
+variable "secret_accessor_secrets" {
+  description = "Secret Manager secret IDs (in project_id) the service's own service account is granted roles/secretmanager.secretAccessor on, one binding per secret. Empty grants no Secret Manager access at all — prefer this over a project-wide role."
+  type        = list(string)
+  default     = []
+}
+
 variable "deletion_protection" {
   description = "Block terraform destroy on the service."
   type        = bool

@@ -63,3 +63,15 @@ resource "google_service_account_iam_member" "service_account_users" {
   role               = "roles/iam.serviceAccountUser"
   member             = each.value
 }
+
+# Per-secret access for the runtime service account, instead of a blanket project-wide
+# roles/secretmanager.secretAccessor that could read any secret in the project. Empty by
+# default — nothing is granted until the service actually names secrets it needs.
+resource "google_secret_manager_secret_iam_member" "runtime_secret_access" {
+  for_each = toset(var.secret_accessor_secrets)
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = module.cloud_run.service_account_id.member
+}

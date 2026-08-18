@@ -32,8 +32,11 @@ module "cloud_run" {
   service_account_project_roles = [
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
-    "roles/secretmanager.secretAccessor",
   ]
+
+  # No secrets are used yet — the placeholder Hello World app doesn't read Secret Manager.
+  # Add secret IDs here (not a project-wide role) once the real service names ones it needs.
+  secret_accessor_secrets = []
 
   min_instance_count = var.min_instance_count
   max_instance_count = var.max_instance_count

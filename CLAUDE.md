@@ -61,3 +61,17 @@ Rules for working on this repo's Terraform. These override default behavior.
   that mode actually works; if the only way to make a binding fit the module is switching it to
   `mode = "authoritative"`, don't — write the raw `_member` resource instead, even though the
   module has that escape hatch.
+- Never grant a project-wide role just because the resource it should be scoped to doesn't
+  exist yet (e.g. a deploy identity's `roles/run.admin` before the Cloud Run service it deploys
+  exists). Use a `google_project_iam_member` with a `condition` block instead — the resource
+  name (`projects/<id>/locations/<region>/services/<name>`, `.../repositories/<id>`, etc.) is
+  deterministic and doesn't require the target resource to exist, so the grant can be scoped
+  from the start (see `modules/github-actions-wif`'s `run_admin_scoped` /
+  `artifactregistry_writer_scoped`). Same for Secret Manager access: grant per-secret via
+  `google_secret_manager_secret_iam_member`, never a project-wide
+  `roles/secretmanager.secretAccessor` (see `modules/cloud-run`'s `secret_accessor_secrets`,
+  which defaults to zero grants).
+- Before adding a role to a service account's blanket project-level role list, check whether a
+  resource-scoped binding for that same permission already exists elsewhere in the stack. Don't
+  grant the same effective access twice at different scopes — the broader one just widens blast
+  radius for no benefit.

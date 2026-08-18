@@ -13,6 +13,11 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_ref" {
+  description = "Git ref allowed to deploy via Workload Identity Federation, e.g. \"refs/heads/main\". Must match the branch deploy.yml actually triggers on."
+  type        = string
+}
+
 variable "state_bucket" {
   description = "GCS bucket holding this repo's Terraform state. Must match Taskfile's STATE_BUCKET — the deploy service account is granted write access to it so the pipeline can run terraform apply on ../invoice-sync."
   type        = string
@@ -23,7 +28,17 @@ variable "deploy_account_id" {
   type        = string
 }
 
-variable "project_roles" {
-  description = "Project-level IAM roles granted to the deploy service account — least privilege for what ../invoice-sync's pipeline actually does: deploy Cloud Run revisions, push images, and act as the runtime service account."
-  type        = list(string)
+variable "region" {
+  description = "Region ../invoice-sync creates its Cloud Run service and Artifact Registry repo in. Must match that stack's own region."
+  type        = string
+}
+
+variable "cloud_run_service_name" {
+  description = "Name of ../invoice-sync's Cloud Run service. Must match that stack's own service_name — scopes the deploy SA's roles/run.admin grant to just this service."
+  type        = string
+}
+
+variable "artifact_registry_repo" {
+  description = "ID of ../invoice-sync's Artifact Registry repo. Must match that stack's own artifact_registry_repo — scopes the deploy SA's roles/artifactregistry.writer grant to just this repo."
+  type        = string
 }
