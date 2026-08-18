@@ -18,6 +18,11 @@ variable "state_bucket" {
   type        = string
 }
 
+variable "deploy_account_id" {
+  description = "Account ID (local part of the email) for the deploy service account. Must match ../invoice-sync's own deploy_account_id — that stack constructs this account's email itself instead of reading it from this stack's output."
+  type        = string
+}
+
 variable "project_roles" {
   description = "Project-level IAM roles granted to the deploy service account — least privilege for what ../invoice-sync's pipeline actually does: deploy Cloud Run revisions, push images, and act as the runtime service account."
   type        = list(string)

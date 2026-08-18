@@ -48,8 +48,8 @@ variable "image_tag" {
   type        = string
 }
 
-variable "deploy_service_account_email" {
-  description = "Email of the GitHub Actions deploy service account, from ../github-actions-wif's service_account_email output. That stack must be applied first."
+variable "deploy_account_id" {
+  description = "Account ID (local part of the email) of the GitHub Actions deploy service account created by ../github-actions-wif. Must match that stack's own deploy_account_id — the email is deterministic (<deploy_account_id>@<project_id>.iam.gserviceaccount.com), so this stack doesn't need that stack's output."
   type        = string
 }
 

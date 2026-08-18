@@ -62,10 +62,10 @@ before the pipeline can deploy anything:
    ```
 3. Set them as GitHub repo variables (Settings → Secrets and variables → Actions → Variables):
    `WIF_PROVIDER` and `DEPLOY_SA_EMAIL`.
-4. `service_account_email` is also `deploy_service_account_email` in
-   `live/invoice-sync/.auto.tfvars` — it's already filled in there with the deterministic value
-   (`github-deployer@yeti-504903.iam.gserviceaccount.com`), so no copy-paste is needed unless
-   `deploy_account_id` was overridden.
+4. `live/invoice-sync` builds this same account's email itself from `project_id` +
+   `deploy_account_id` — as long as both stacks' `.auto.tfvars` set the same
+   `deploy_account_id` (`"github-deployer"` by default in both), there's nothing to copy from
+   this stack's output into the other.
 5. From then on, pushes to `main` (or a manual `workflow_dispatch`) build, push and deploy
    `invoice-sync` end to end — no further local applies required.
 

@@ -28,7 +28,6 @@ variable "provider_id" {
 variable "deploy_account_id" {
   description = "Account ID (local part of the email) for the deploy service account."
   type        = string
-  default     = "github-deployer"
 }
 
 variable "project_roles" {

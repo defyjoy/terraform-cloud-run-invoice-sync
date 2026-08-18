@@ -8,6 +8,8 @@ github_repo  = "terraform-cloud-run-invoice-sync"
 
 state_bucket = "yeti-terraform-state-bucket"
 
+deploy_account_id = "github-deployer"
+
 project_roles = [
   "roles/run.admin",
   "roles/artifactregistry.writer",

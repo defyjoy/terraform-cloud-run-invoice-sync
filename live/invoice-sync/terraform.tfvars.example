@@ -9,9 +9,9 @@ artifact_registry_repo = "invoice-sync"
 
 notification_email = "you@example.com"
 
-# Comes from `terraform -chdir=../github-actions-wif output -raw service_account_email`, once
-# that stack has been applied. This stack's apply fails until it's set.
-deploy_service_account_email = "github-deployer@yeti-504903.iam.gserviceaccount.com"
+# Must match ../github-actions-wif's own deploy_account_id — main.tf builds the deploy
+# service account's email from this plus project_id.
+deploy_account_id = "github-deployer"
 
 # Cloud Run is private (INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER) and reached only through
 # module.lb. Points at the hub VPC created by the google-cloud-terraform repo's live/hub/vpc —
