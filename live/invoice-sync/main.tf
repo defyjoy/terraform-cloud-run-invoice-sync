@@ -13,12 +13,11 @@ module "cloud_run" {
   # let in — *.run.app direct access is refused, so module.lb is the only public entry point.
   ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
+  # ../network's own state creates the connector; referenced by its deterministic name here
+  # rather than a remote-state read, same pattern as artifact_registry_repo.
   vpc_access = {
-    egress = var.vpc_egress
-    network_interfaces = {
-      network    = var.network_name
-      subnetwork = var.subnetwork_name
-    }
+    egress    = var.vpc_egress
+    connector = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
   }
 
   create_service_account = true

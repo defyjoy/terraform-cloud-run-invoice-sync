@@ -40,11 +40,13 @@ jobs:
         with:
           version: "3.x"
 
-      # Same task a human runs locally — PROJECT_ID/STATE_BUCKET (job env, above) reach
+      # Same tasks a human runs locally — PROJECT_ID/STATE_BUCKET (job env, above) reach
       # Taskfile.yml's -backend-config via Task's automatic env-var pickup, see CLAUDE.md.
       # enable-apis is bootstrap-only (see README) and is never applied by the pipeline.
-      - name: Ensure the Artifact Registry repo exists
-        run: ACTION=apply task artifact-registry
+      - name: Ensure the Artifact Registry repo and VPC connector exist
+        run: |
+          ACTION=apply task artifact-registry
+          ACTION=apply task network
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet

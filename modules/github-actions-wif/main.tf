@@ -65,6 +65,34 @@ resource "google_project_iam_member" "artifactregistry_admin" {
   member  = module.deploy_service_account.iam_email
 }
 
+# Project-wide, unconditioned — a deliberate, discussed exception (see CLAUDE.md's IAM
+# section), not a default. This project also hosts the google-cloud-terraform repo's hub/dev
+# VPCs, so this grant lets the deploy SA touch that networking too, not just ../network's. Not
+# scoped via IAM Conditions because Compute Engine's condition support isn't confirmed for
+# networks/subnetworks/routers, and this session already spent a long time discovering that a
+# condition which looks correct can silently never match (see the artifactregistry_admin
+# comment above) — an untested condition here risks the same failure mode on infra with a much
+# larger blast radius if guessed wrong.
+resource "google_project_iam_member" "compute_network_admin" {
+  project = var.project_id
+  role    = "roles/compute.networkAdmin"
+  member  = module.deploy_service_account.iam_email
+}
+
+# compute.networkAdmin excludes firewall rules by design; ../network's allow_internal rule
+# needs this separately.
+resource "google_project_iam_member" "compute_security_admin" {
+  project = var.project_id
+  role    = "roles/compute.securityAdmin"
+  member  = module.deploy_service_account.iam_email
+}
+
+resource "google_project_iam_member" "vpcaccess_admin" {
+  project = var.project_id
+  role    = "roles/vpcaccess.admin"
+  member  = module.deploy_service_account.iam_email
+}
+
 # Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
 # equivalent to a key file but without one ever existing.
 #

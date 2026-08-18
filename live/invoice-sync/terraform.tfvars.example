@@ -11,9 +11,8 @@ notification_email = "you@example.com"
 
 deploy_account_id = "github-deployer"
 
-network_name    = "yeti-hub-vpc"
-subnetwork_name = "yeti-hub-run-us-central1-0"
-vpc_egress      = "PRIVATE_RANGES_ONLY"
+vpc_connector_name = "invoice-sync-connector"
+vpc_egress         = "PRIVATE_RANGES_ONLY"
 
 lb_name = "invoice-sync-lb"
 

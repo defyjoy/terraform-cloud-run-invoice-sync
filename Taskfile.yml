@@ -33,6 +33,12 @@ tasks:
       - task: _tf
         vars: { DIR: '{{.ROOT}}/artifact-registry' }
 
+  network:
+    desc: 'VPC, Serverless VPC Access connector and firewall rule for invoice-sync — applied by the pipeline ahead of invoice-sync, or locally (ACTION=plan|apply|destroy, default plan)'
+    cmds:
+      - task: _tf
+        vars: { DIR: '{{.ROOT}}/network' }
+
   invoice-sync:
     desc: 'invoice-sync Cloud Run service, load balancer and failure alerting — normally applied by the pipeline, not locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
@@ -48,7 +54,7 @@ tasks:
     desc: Validate every root module
     cmds:
       - |
-        for component in enable-apis github-actions-wif artifact-registry invoice-sync; do
+        for component in enable-apis github-actions-wif artifact-registry network invoice-sync; do
           echo "==> $component"
           terraform -chdir={{.ROOT}}/$component validate
         done

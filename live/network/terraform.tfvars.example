@@ -1,0 +1,8 @@
+# Reference only — real values live in .auto.tfvars, not this file.
+
+project_id = "yeti-504903"
+region     = "us-central1"
+
+name = "invoice-sync"
+
+connector_cidr = "10.50.0.0/28"

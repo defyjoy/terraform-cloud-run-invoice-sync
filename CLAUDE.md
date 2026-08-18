@@ -8,6 +8,10 @@ Rules for working on this repo's Terraform. These override default behavior.
   the load balancer in front of Cloud Run (`modules/serverless-lb`) — no public IPs, no
   `INGRESS_TRAFFIC_ALL` on Cloud Run, no public Cloud SQL, no `0.0.0.0/0` ingress firewall
   rules, unless the user explicitly asks for an exception and understands what it opens up.
+- `live/network` (`modules/network`) is this repo's own VPC — a dedicated network with a
+  Serverless VPC Access connector on a private /28 subnet, which Cloud Run attaches to via
+  `vpc_access.connector`. This project (`yeti-504903`) also hosts the `google-cloud-terraform`
+  repo's hub/dev VPCs; `live/network` does not touch them and shouldn't grow to.
 
 ## Module structure
 
@@ -114,3 +118,16 @@ Rules for working on this repo's Terraform. These override default behavior.
   first place — confirmed against Google's Artifact Registry access-control docs, not assumed.
   `artifactregistry_admin` is granted project-wide, unconditioned, for this reason — don't
   reintroduce a `resource.name` condition on it expecting it to narrow anything.
+- `roles/compute.networkAdmin`, `roles/compute.securityAdmin` and `roles/vpcaccess.admin`
+  (`modules/github-actions-wif`'s `compute_network_admin`/`compute_security_admin`/
+  `vpcaccess_admin`, needed for the pipeline to apply `live/network`) are granted project-wide,
+  unconditioned — a discussed, accepted trade-off, not a default. This is a materially bigger
+  blast radius than every other grant in this repo: `yeti-504903` also hosts the
+  `google-cloud-terraform` repo's hub/dev VPCs, GKE networking and VPN, so this lets the deploy
+  SA touch all of that, not just `live/network`'s own resources. Compute Engine's IAM
+  Conditions support isn't confirmed for networks/subnetworks/routers/firewalls specifically
+  (Google's supported-services list only says "Compute Engine" broadly), and given
+  `artifactregistry_admin` above already showed a condition that looks syntactically correct
+  can silently never match, an unverified condition here was judged not worth risking on infra
+  with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
+  confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.

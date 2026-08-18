@@ -9,6 +9,7 @@ when a deployed revision fails to become ready.
 modules/
 ├── enable-apis/              wraps google_project_service, generic across projects
 ├── artifact-registry/        wraps google_artifact_registry_repository
+├── network/                  VPC + Serverless VPC Access connector + firewall rule
 ├── cloud-run/                copied from defyjoy/google-cloud-terraform, unchanged
 ├── github-actions-wif/       WIF pool + provider + deploy service account, scoped to one repo
 ├── deployment-failure-alert/ Pub/Sub topic + email/Pub/Sub notification channels + alert policy
@@ -18,21 +19,23 @@ live/
 ├── github-actions-wif/   the deploy identity — its own state, applied by hand once (bootstrap)
 ├── artifact-registry/    the invoice-sync image repo — its own state, applied ahead of
 │                         docker push, since it has to exist before the pipeline can push to it
+├── network/              this repo's own VPC and connector — its own state, applied ahead of
+│                         invoice-sync, since Cloud Run's vpc_access references it by name
 └── invoice-sync/         the service, load balancer, and failure alerting
 .github/
 └── workflows/
-    └── deploy.yml    artifact-registry -> build -> push -> `task invoice-sync`
+    └── deploy.yml    artifact-registry + network -> build -> push -> `task invoice-sync`
 ```
 
 Each root module holds separate state:
-`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|invoice-sync>`.
+`gs://yeti-terraform-state-bucket/yeti-504903/live/<enable-apis|github-actions-wif|artifact-registry|network|invoice-sync>`.
 `enable-apis` and `github-actions-wif` are both bootstrap-only, applied locally with the
 operator's own credentials, and never touched by the pipeline — `github-actions-wif` because it
 has to exist before the pipeline can authenticate at all, and `enable-apis` because
 `roles/serviceusage.*` has no way to scope down to individual services (see CLAUDE.md's IAM
 section), so granting the deploy SA project-wide service-enablement access isn't worth the blast
-radius. `artifact-registry` is split into its own stack because the pipeline applies it on every
-run, ahead of the image push that needs it to exist.
+radius. `artifact-registry` and `network` are split into their own stacks because the pipeline
+applies them on every run, ahead of what depends on them.
 
 `deploy.yml` never runs `terraform` directly — it installs Task and calls the exact same
 `task <name>` a human would, so the init/backend-config/apply sequence lives in one place
@@ -43,19 +46,24 @@ job-level `env:`, not hardcoded a second time as literal `-backend-config` strin
 
 ## Pipeline stages and privileges
 
-`deploy.yml` runs three stages in order: `artifact-registry` (apply) → docker build → docker
-push → `invoice-sync` (apply). `artifact-registry` runs every time — it's idempotent, a no-op
-once the repo exists — so a deleted repo self-heals on the next push without a separate manual
-step.
+`deploy.yml` runs four stages in order: `artifact-registry` + `network` (apply, either order) →
+docker build → docker push → `invoice-sync` (apply). Both `artifact-registry` and `network` run
+every time — idempotent, a no-op once they exist — so either self-heals on the next push if
+deleted, without a separate manual step.
 
-This means the deploy SA needs `roles/artifactregistry.admin` (not `.repoAdmin`/`.writer`,
-neither of which grant `repositories.create`/`.delete`), and unlike every other grant in this
-repo, it's project-wide rather than scoped to the one repo — Artifact Registry has no
-`resource.name`-based IAM Conditions at all, only Resource Manager tags, a different mechanism.
-See CLAUDE.md's IAM section.
+This means the deploy SA needs, project-wide and unconditioned (unlike every other grant in
+this repo, which is scoped to one named resource):
+- `roles/artifactregistry.admin` (not `.repoAdmin`/`.writer`, neither of which grant
+  `repositories.create`/`.delete`) — Artifact Registry has no `resource.name`-based IAM
+  Conditions at all, only Resource Manager tags, a different mechanism.
+- `roles/compute.networkAdmin`, `roles/compute.securityAdmin` (firewall rules aren't covered by
+  `networkAdmin`) and `roles/vpcaccess.admin`, for `network`'s VPC/subnet/firewall/connector.
+  This is a materially bigger blast radius than everything else here: `yeti-504903` also hosts
+  the `google-cloud-terraform` repo's hub/dev VPCs, so the deploy SA can touch that networking
+  too, not just this repo's own. Accepted as a discussed trade-off — see CLAUDE.md's IAM section.
 
-`enable-apis` is deliberately kept local-only, unlike `artifact-registry` — see CLAUDE.md's IAM
-section for why `roles/serviceusage.*` doesn't scope down the same way.
+`enable-apis` is deliberately kept local-only, unlike `artifact-registry`/`network` — see
+CLAUDE.md's IAM section for why `roles/serviceusage.*` doesn't scope down the same way.
 
 ## Usage
 
@@ -64,6 +72,7 @@ task                             # list tasks
 task enable-apis                 # init + plan the service APIs (bootstrap only, local)
 task github-actions-wif          # init + plan the deploy identity (bootstrap only, local)
 task artifact-registry           # init + plan the image repo (normally the pipeline's job)
+task network                     # init + plan the VPC/connector (normally the pipeline's job)
 task invoice-sync                # init + plan the service (normally the pipeline's job)
 ACTION=apply task invoice-sync   # init + apply
 ```
@@ -126,14 +135,14 @@ future automation that wants to subscribe) and an email address (`notification_e
 
 Cloud Run's `ingress` is `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` — the service's own
 `*.run.app` URL refuses direct requests, and `module.lb` (an external HTTP(S) load balancer,
-`modules/serverless-lb`) is the only path in. This mirrors
-`google-cloud-terraform`'s `live/hub/cloud-run` pattern.
+`modules/serverless-lb`) is the only path in.
 
-Getting there requires Direct VPC egress into a real VPC, which this repo doesn't create itself
-— `network_name`/`subnetwork_name` (`.auto.tfvars`) are set to the hub VPC and its Cloud Run
-subnet (`yeti-hub-vpc` / `yeti-hub-run-us-central1-0`) already created by the
-`google-cloud-terraform` repo's `live/hub/vpc`. That stack must exist first; change the values
-in `.auto.tfvars` if this repo shouldn't depend on it.
+Outbound (egress) traffic reaches private destinations through a Serverless VPC Access
+connector, on its own dedicated subnet in `live/network`'s own VPC (`10.50.0.0/28`, part of a
+reserved `10.50.0.0/24` block — see that stack's `.auto.tfvars`) — self-contained within this
+repo, not a dependency on `google-cloud-terraform`'s hub VPC. `vpc_egress`
+(`live/invoice-sync/.auto.tfvars`) controls whether only RFC1918 destinations
+(`PRIVATE_RANGES_ONLY`) or everything (`ALL_TRAFFIC`) routes through it.
 
 No VPN is wired up — the load balancer is public. Add one later (or switch ingress to
 `INGRESS_TRAFFIC_INTERNAL_ONLY` and drop the load balancer) if the service needs to be
