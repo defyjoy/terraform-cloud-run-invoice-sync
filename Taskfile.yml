@@ -1,0 +1,50 @@
+version: '3'
+
+silent: true
+
+vars:
+  ACTION: '{{.ACTION | default "plan"}}'
+  AUTO_APPROVE: '{{.AUTO_APPROVE | default "true"}}'
+  PROJECT_ID: '{{.PROJECT_ID | default "yeti-504903"}}'
+  ROOT: live
+  STATE_BUCKET: '{{.STATE_BUCKET | default "yeti-terraform-state-bucket"}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  invoice-sync:
+    desc: 'invoice-sync Cloud Run service, deploy WIF and failure alerting (ACTION=plan|apply|destroy, default plan)'
+    cmds:
+      - task: _tf
+        vars: { DIR: '{{.ROOT}}/invoice-sync' }
+
+  fmt:
+    desc: Format all Terraform files
+    cmds:
+      - terraform fmt -recursive .
+
+  validate:
+    desc: Validate the root module
+    cmds:
+      - terraform -chdir={{.ROOT}}/invoice-sync validate
+
+  _tf:
+    internal: true
+    requires:
+      vars: [DIR]
+    vars:
+      # apply and destroy prompt for confirmation; plan has no such flag.
+      # Set AUTO_APPROVE=false to get the interactive prompt back.
+      APPROVE: '{{if and (ne .ACTION "plan") (ne .AUTO_APPROVE "false")}}-auto-approve{{end}}'
+    preconditions:
+      - sh: 'case "{{.ACTION}}" in plan|apply|destroy) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'ACTION must be plan, apply or destroy (got "{{.ACTION}}")'
+    cmds:
+      - |
+        terraform -chdir={{.DIR}} init -input=false -reconfigure \
+          -backend-config="bucket={{.STATE_BUCKET}}" \
+          -backend-config="prefix={{.PROJECT_ID}}/{{.DIR}}"
+      - terraform -chdir={{.DIR}} {{.ACTION}} -input=false {{.APPROVE}} -var project_id={{.PROJECT_ID}} {{.CLI_ARGS}}

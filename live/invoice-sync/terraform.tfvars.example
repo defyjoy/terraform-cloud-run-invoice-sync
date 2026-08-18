@@ -1,0 +1,17 @@
+# Reference only — real values live in .auto.tfvars, not this file.
+
+github_owner = "defyjoy"
+github_repo  = "terraform-cloud-run-invoice-sync"
+
+notification_email = "you@example.com"
+
+# project_id          = "yeti-504903"
+# region              = "us-central1"
+# service_name        = "invoice-sync"
+# min_instance_count  = 0
+# max_instance_count  = 2
+# deletion_protection = true
+
+# image_tag has no default — the pipeline always passes -var image_tag=<git sha>.
+# For a one-off local apply before the pipeline exists, pass it on the CLI instead of setting
+# it here, e.g. task invoice-sync ACTION=apply -- -var image_tag=bootstrap.

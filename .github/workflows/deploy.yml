@@ -1,0 +1,62 @@
+name: Deploy invoice-sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PROJECT_ID: yeti-504903
+  REGION: us-central1
+  STATE_BUCKET: yeti-terraform-state-bucket
+  AR_REPO: invoice-sync
+  SERVICE_NAME: invoice-sync
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # WIF_PROVIDER and DEPLOY_SA_EMAIL come from this stack's own outputs. They can't exist
+      # before the pool/provider/service account do, so the very first apply has to run locally
+      # (task invoice-sync ACTION=apply) — see README for the bootstrap steps.
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/invoice-sync:${{ github.sha }}
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform init
+        working-directory: live/invoice-sync
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ env.STATE_BUCKET }}" \
+            -backend-config="prefix=${{ env.PROJECT_ID }}/live/invoice-sync"
+
+      - name: Terraform apply
+        working-directory: live/invoice-sync
+        run: |
+          terraform apply -input=false -auto-approve \
+            -var project_id=${{ env.PROJECT_ID }} \
+            -var image_tag=${{ github.sha }}
