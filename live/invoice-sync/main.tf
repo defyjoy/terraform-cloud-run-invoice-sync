@@ -14,7 +14,8 @@ module "cloud_run" {
     connector = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
   }
 
-  create_service_account = true
+  create_service_account        = true
+  service_account_project_roles = var.runtime_service_account_project_roles
 
   service_account_users = ["serviceAccount:${var.deploy_account_id}@${var.project_id}.iam.gserviceaccount.com"]
 

@@ -64,6 +64,11 @@ variable "deletion_protection" {
 }
 
 variable "deploy_account_id" {
-  description = "Account ID (local part of the email) of the GitHub Actions deploy service account created by ../github-actions-wif. Must match that stack's own deploy_account_id. Granted roles/iam.serviceAccountUser on the runtime SA (scoped to that SA only) so the pipeline can deploy revisions running as it — that grant requires iam.serviceAccounts.setIamPolicy on the SA, which ../invoice-sync-runtime-sa grants this account, scoped to just this SA, as a one-time bootstrap step."
+  description = "Account ID (local part of the email) of the GitHub Actions deploy service account created by ../github-actions-wif. Must match that stack's own deploy_account_id. Granted roles/iam.serviceAccountUser on the runtime SA so the pipeline can deploy revisions running as it, via ../github-actions-wif's project-wide roles/iam.serviceAccountAdmin grant."
   type        = string
+}
+
+variable "runtime_service_account_project_roles" {
+  description = "Project-level IAM roles granted to the Cloud Run runtime SA, e.g. [\"roles/logging.logWriter\"]. Granted directly by this stack via ../github-actions-wif's project-wide roles/resourcemanager.projectIamAdmin grant."
+  type        = list(string)
 }

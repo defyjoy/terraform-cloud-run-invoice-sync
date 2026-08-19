@@ -39,12 +39,6 @@ tasks:
       - task: _tf
         vars: { DIR: '{{.ROOT}}/network' }
 
-  invoice-sync-runtime-sa:
-    desc: 'Cloud Run runtime service account, its project roles, and the deploy SAs actAs grant — bootstrap only, applied locally, never by the pipeline (ACTION=plan|apply|destroy, default plan)'
-    cmds:
-      - task: _tf
-        vars: { DIR: '{{.ROOT}}/invoice-sync-runtime-sa' }
-
   invoice-sync:
     desc: 'invoice-sync Cloud Run service, load balancer and failure alerting — normally applied by the pipeline, not locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
@@ -60,7 +54,7 @@ tasks:
     desc: Validate every root module
     cmds:
       - |
-        for component in enable-apis github-actions-wif artifact-registry network invoice-sync-runtime-sa invoice-sync; do
+        for component in enable-apis github-actions-wif artifact-registry network invoice-sync; do
           echo "==> $component"
           terraform -chdir={{.ROOT}}/$component validate
         done

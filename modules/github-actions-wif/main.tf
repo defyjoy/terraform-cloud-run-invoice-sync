@@ -89,13 +89,24 @@ locals {
       condition = null
     }
 
-    # roles/iam.serviceAccountCreator, not .serviceAccountAdmin: needed for ../invoice-sync's
-    # create_service_account = true (the Cloud Run runtime SA). .serviceAccountCreator only
-    # grants create/get/list, not delete/update/setIamPolicy on every service account in the
-    # project — it has no access to grant the SA's project roles or actAs itself
-    # (../invoice-sync-runtime-sa does that separately, see CLAUDE.md's IAM section).
-    service_account_creator = {
-      role      = "roles/iam.serviceAccountCreator"
+    # Project-wide: lets the deploy SA setIamPolicy on every service account in the project
+    # (create/delete/update, plus grant itself actAs via ../invoice-sync's own
+    # service_account_users), not just the Cloud Run runtime SA it creates. There's no way to
+    # scope this to one SA when that SA doesn't exist yet at plan time — creating it doesn't by
+    # itself grant rights to set its IAM policy. A discussed, accepted trade-off: the
+    # alternative was a one-time manual bootstrap grant scoped to just the runtime SA. See
+    # CLAUDE.md's IAM section.
+    service_account_admin = {
+      role      = "roles/iam.serviceAccountAdmin"
+      condition = null
+    }
+
+    # Project-wide: resourcemanager.projects.setIamPolicy has no resource-scoped variant, so
+    # granting the Cloud Run runtime SA's own project roles (logging.logWriter,
+    # cloudtrace.agent) from the pipeline requires this. Same trade-off as
+    # service_account_admin above — discussed and accepted in place of a manual bootstrap step.
+    project_iam_admin = {
+      role      = "roles/resourcemanager.projectIamAdmin"
       condition = null
     }
   }

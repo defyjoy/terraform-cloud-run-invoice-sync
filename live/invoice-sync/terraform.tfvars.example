@@ -19,3 +19,8 @@ max_instance_count  = 2
 deletion_protection = true
 
 deploy_account_id = "github-deployer"
+
+runtime_service_account_project_roles = [
+  "roles/logging.logWriter",
+  "roles/cloudtrace.agent",
+]
