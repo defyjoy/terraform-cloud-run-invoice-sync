@@ -34,4 +34,4 @@ runtime_service_account_project_roles = [
 
 db_password_secret_id = "db-password"
 
-expected_db_password = "invoice-sync-test-password"
+expected_db_password = "change-me-in-production"
