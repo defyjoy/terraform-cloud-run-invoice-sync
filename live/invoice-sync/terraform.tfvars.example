@@ -10,7 +10,11 @@ artifact_registry_repo = "invoice-sync"
 notification_email = "you@example.com"
 
 vpc_connector_name = "invoice-sync-connector"
-vpc_egress         = "PRIVATE_RANGES_ONLY"
+
+# ALL_TRAFFIC, not PRIVATE_RANGES_ONLY: the service calls external APIs, and routing that
+# egress through ../network's Cloud NAT (instead of Cloud Run's default direct-to-internet
+# path) gives it a logged, auditable egress trail. See ../network's module "router".
+vpc_egress = "ALL_TRAFFIC"
 
 lb_name = "invoice-sync-lb"
 

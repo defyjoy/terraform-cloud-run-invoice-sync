@@ -105,8 +105,11 @@ module "lb" {
       iap_config = {
         enable = false
       }
+      # HIPAA §164.312(b) audit-controls: this LB is the entry point for every request to the
+      # service, so its access logs are the only infra-level record of who accessed what.
       log_config = {
-        enable = false
+        enable      = true
+        sample_rate = 1.0
       }
     }
   }

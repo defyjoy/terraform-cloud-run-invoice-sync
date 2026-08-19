@@ -38,6 +38,35 @@ module "serverless_connector" {
   ]
 }
 
+# Cloud Run's vpc_access.egress is set to ALL_TRAFFIC (see ../invoice-sync), so all of the
+# service's internet-bound egress — not just RFC1918 destinations — routes through this VPC.
+# NAT is what actually gets that traffic to the internet from a connector subnet with no
+# external IPs, and its log_config is the audit trail of what the service talks to externally,
+# which PRIVATE_RANGES_ONLY egress (bypassing the VPC entirely for internet destinations) gave
+# no visibility into at all.
+module "router" {
+  source  = "terraform-google-modules/cloud-router/google"
+  version = "~> 9.0"
+
+  name       = "${var.name}-router"
+  project_id = var.project_id
+  region     = var.region
+  network    = module.vpc.network_name
+
+  nats = [
+    {
+      name                               = "${var.name}-nat"
+      nat_ip_allocate_option             = "AUTO_ONLY"
+      source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+
+      log_config = {
+        enable = true
+        filter = "ALL"
+      }
+    },
+  ]
+}
+
 module "firewall_rules" {
   source  = "terraform-google-modules/network/google//modules/firewall-rules"
   version = "~> 18.1"
