@@ -48,6 +48,9 @@ module "lb" {
   region     = var.region
 
   cloud_run_service_name = module.cloud_run.service_name
+
+  ssl     = var.lb_ssl
+  domains = var.lb_domains
 }
 
 module "deployment_alert" {

@@ -14,6 +14,12 @@ vpc_egress         = "PRIVATE_RANGES_ONLY"
 
 lb_name = "invoice-sync-lb"
 
+# No domain yet: ssl stays true (self-signed fallback still encrypts transit) with domains
+# empty. Once a real domain is pointed at load_balancer_ip, set lb_domains to it to switch to a
+# browser-trusted Google-managed cert.
+lb_ssl     = true
+lb_domains = []
+
 min_instance_count  = 0
 max_instance_count  = 2
 deletion_protection = true

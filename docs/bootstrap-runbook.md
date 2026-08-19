@@ -49,10 +49,18 @@ git commit --allow-empty -m "bootstrap: trigger first pipeline run" && git push
 ## 6. Add the db-password secret value
 
 `db-secrets` only creates the secret container — the pipeline never writes a value to it (so
-the value never lands in Terraform state). Add one out-of-band, with your own credentials:
+the value never lands in Terraform state). Add one out-of-band, with your own credentials —
+`--data-file=-` reads the value from stdin instead of a file on disk, so it never touches shell
+history either:
 
 ```bash
-gcloud secrets versions add db-password --project=yeti-504903 --data-file=<path-to-password-file>
+echo -n "<the actual db password>" | gcloud secrets versions add db-password --project=yeti-504903 --data-file=-
+```
+
+Or from a file (e.g. one already used to seed the database itself):
+
+```bash
+gcloud secrets versions add db-password --project=yeti-504903 --data-file=./db-password.txt
 ```
 
 ## Checks

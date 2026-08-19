@@ -5,3 +5,4 @@ crash.log
 !*.tfvars.example
 .terraformrc
 terraform.rc
+db-password.txt

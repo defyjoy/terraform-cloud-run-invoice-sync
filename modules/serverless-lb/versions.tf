@@ -15,5 +15,11 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 2.1"
     }
+    # Generates the self-signed fallback cert used when ssl = true but no domain is configured
+    # yet for a Google-managed cert.
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0"
+    }
   }
 }

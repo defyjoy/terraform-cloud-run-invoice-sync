@@ -33,6 +33,16 @@ variable "vpc_egress" {
   }
 }
 
+variable "lb_ssl" {
+  description = "Terminate HTTPS at the load balancer and redirect HTTP to HTTPS. Keep true — with lb_domains empty this still encrypts transit via a self-signed cert (browsers will show a trust warning) until a real domain is set; see ../../modules/serverless-lb's own ssl/domains description."
+  type        = bool
+}
+
+variable "lb_domains" {
+  description = "Domains for the load balancer's Google-managed SSL certificate, pointed at load_balancer_ip once known. Empty falls back to a self-signed cert (see lb_ssl) — set this the moment a real domain exists so the cert becomes browser-trusted."
+  type        = list(string)
+}
+
 variable "lb_name" {
   description = "Base name for the public load balancer's components."
   type        = string

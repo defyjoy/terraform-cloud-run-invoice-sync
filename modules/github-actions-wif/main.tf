@@ -121,6 +121,51 @@ locals {
       role      = "roles/secretmanager.admin"
       condition = null
     }
+
+    # modules/deployment-failure-alert creates two NotificationChannels (pubsub, email); their
+    # parent is the project and NotificationChannel isn't confirmed to support IAM Conditions,
+    # so this is project-wide/unconditioned, same precedent as pubsub_editor above.
+    # .notificationChannelEditor grants exactly notificationChannels.create/get/list/update/
+    # delete/sendVerificationCode/verify — no alert-policy or workspace-admin surface.
+    monitoring_notification_channel_editor = {
+      role      = "roles/monitoring.notificationChannelEditor"
+      condition = null
+    }
+
+    # modules/deployment-failure-alert also creates the AlertPolicy itself
+    # (google_monitoring_alert_policy.revision_failed). NotificationChannel and AlertPolicy are
+    # separate permission surfaces in Cloud Monitoring IAM — notificationChannelEditor above
+    # covers notificationChannels.* only, not alertPolicies.*, so alert_policy.create still 403s
+    # without this. Same project-wide/unconditioned rationale: parent is the project, and
+    # AlertPolicy's IAM Conditions support isn't confirmed. alertPolicyEditor grants exactly
+    # alertPolicies.create/get/list/update/delete — no dashboards/uptime-checks/metrics-writer
+    # surface, unlike the broader roles/monitoring.editor.
+    monitoring_alert_policy_editor = {
+      role      = "roles/monitoring.alertPolicyEditor"
+      condition = null
+    }
+
+    # revision_failed's condition_matched_log block routes creation through Cloud Logging's
+    # own log-based-alerting API, not just Monitoring — alertPolicyEditor alone still 403s on
+    # logging.notificationRules.create. Checked every predefined role for this permission: only
+    # roles/logging.admin (80 perms) and roles/logging.configWriter (60 perms) include it, no
+    # narrower predefined role exists, so configWriter is the least-privilege option available
+    # (it also grants sinks/exclusions/log-based-metrics/buckets management, which is more than
+    # this stack needs, but there's nothing tighter to reach for). Project-wide/unconditioned:
+    # parent is the project and NotificationRule's IAM Conditions support isn't confirmed.
+    logging_config_writer = {
+      role      = "roles/logging.configWriter"
+      condition = null
+    }
+
+    # modules/serverless-lb creates a regional NEG; compute.networkAdmin above covers
+    # regionNetworkEndpointGroups.get/list/use but not .create. loadBalancerAdmin adds .create
+    # plus the backend-service/URL-map permissions the lb-http submodule also needs. Same
+    # unconditioned rationale as compute_network_admin above.
+    compute_load_balancer_admin = {
+      role      = "roles/compute.loadBalancerAdmin"
+      condition = null
+    }
   }
 }
 

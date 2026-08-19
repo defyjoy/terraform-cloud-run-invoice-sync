@@ -19,13 +19,13 @@ variable "cloud_run_service_name" {
 }
 
 variable "ssl" {
-  description = "Terminate HTTPS at the load balancer using a Google-managed certificate for domains, and redirect HTTP to HTTPS. False serves plain HTTP only."
+  description = "Terminate HTTPS at the load balancer and redirect HTTP to HTTPS. False serves plain HTTP only, unencrypted. With domains set, uses a Google-managed certificate for those domains; with domains empty, falls back to a self-signed certificate (still encrypts transit, but browsers show a trust warning since nothing signs it) until a real domain is available."
   type        = bool
   default     = false
 }
 
 variable "domains" {
-  description = "Domains for the Google-managed SSL certificate. Required when ssl is true, ignored otherwise."
+  description = "Domains for the Google-managed SSL certificate. Each must already resolve (or be pointed, once the LB's IP is known) to this load balancer's IP — Google's managed-cert provisioning polls DNS and never completes otherwise. Ignored when ssl is false. Empty while ssl is true uses a self-signed cert instead (see ssl's description)."
   type        = list(string)
   default     = []
 }
