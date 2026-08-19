@@ -95,3 +95,7 @@ Instead I chose to target a single branch for the github deployer
 
 
 https://github.com/defyjoy/terraform-cloud-run-invoice-sync/actions/runs/32228072166
+
+Snapshot of the deployment failure alert email:
+
+![Deployment failure alert email](assets/email-alert.png)
