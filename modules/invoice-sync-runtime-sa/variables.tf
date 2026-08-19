@@ -14,8 +14,8 @@ variable "project_roles" {
   default     = []
 }
 
-variable "actas_members" {
-  description = "Fully qualified members (e.g. \"serviceAccount:...\") granted roles/iam.serviceAccountUser on this service account."
+variable "sa_admin_members" {
+  description = "Fully qualified members (e.g. \"serviceAccount:...\") granted roles/iam.serviceAccountAdmin on this service account only (not project-wide) — lets them manage IAM policy (e.g. grant themselves actAs) on this one SA without resourcemanager.projects.setIamPolicy or iam.serviceAccounts.setIamPolicy at the project level."
   type        = list(string)
   default     = []
 }

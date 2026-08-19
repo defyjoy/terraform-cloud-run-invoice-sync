@@ -62,3 +62,8 @@ variable "deletion_protection" {
   description = "Block terraform destroy on the service."
   type        = bool
 }
+
+variable "deploy_account_id" {
+  description = "Account ID (local part of the email) of the GitHub Actions deploy service account created by ../github-actions-wif. Must match that stack's own deploy_account_id. Granted roles/iam.serviceAccountUser on the runtime SA (scoped to that SA only) so the pipeline can deploy revisions running as it — that grant requires iam.serviceAccounts.setIamPolicy on the SA, which ../invoice-sync-runtime-sa grants this account, scoped to just this SA, as a one-time bootstrap step."
+  type        = string
+}

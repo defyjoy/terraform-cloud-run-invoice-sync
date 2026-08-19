@@ -14,3 +14,5 @@ lb_name = "invoice-sync-lb"
 min_instance_count  = 0
 max_instance_count  = 2
 deletion_protection = true
+
+deploy_account_id = "github-deployer"
