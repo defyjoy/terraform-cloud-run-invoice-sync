@@ -116,6 +116,9 @@ resource "google_project_iam_custom_role" "compute_network" {
     "vpcaccess.connectors.get",
     "vpcaccess.connectors.update",
     "vpcaccess.connectors.list",
+    "compute.globalOperations.get",
+    "compute.regionOperations.get",
+    "vpcaccess.operations.get",
   ]
 }
 
@@ -175,6 +178,8 @@ resource "google_project_iam_custom_role" "load_balancer" {
     "compute.globalForwardingRules.delete",
     "compute.globalForwardingRules.setTarget",
     "compute.globalForwardingRules.setLabels",
+    "compute.globalOperations.get",
+    "compute.regionOperations.get",
   ]
 }
 
@@ -191,6 +196,7 @@ resource "google_project_iam_custom_role" "cloud_run" {
     "run.services.delete",
     "run.services.getIamPolicy",
     "run.services.setIamPolicy",
+    "run.operations.get",
   ]
 }
 
@@ -198,7 +204,7 @@ resource "google_project_iam_custom_role" "artifact_registry" {
   project     = var.project_id
   role_id     = "githubDeployerArtifactRegistry"
   title       = "GitHub Deployer - Artifact Registry"
-  description = "Repository management for modules/artifact-registry."
+  description = "Repository management for modules/artifact-registry, plus docker push in deploy.yml and Cloud Run's deploy-time image read."
   stage       = "GA"
   permissions = [
     "artifactregistry.repositories.create",
@@ -207,6 +213,8 @@ resource "google_project_iam_custom_role" "artifact_registry" {
     "artifactregistry.repositories.delete",
     "artifactregistry.repositories.getIamPolicy",
     "artifactregistry.repositories.setIamPolicy",
+    "artifactregistry.repositories.uploadArtifacts",
+    "artifactregistry.repositories.downloadArtifacts",
   ]
 }
 

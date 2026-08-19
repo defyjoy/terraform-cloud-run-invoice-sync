@@ -142,11 +142,46 @@ Rules for working on this repo's Terraform. These override default behavior.
   `githubDeployerLoadBalancer` includes `compute.sslCertificates.*` pre-emptively, since
   `modules/serverless-lb`'s managed-cert code path already exists and is one `lb_domains`
   tfvars edit away from being live).
+- **When a service's mutating API is asynchronous (returns a long-running Operation that
+  Terraform polls), the custom role needs an `*.operations.get` permission too, on top of the
+  resource CRUD permissions** — easy to miss because it's not a permission on the resource
+  being managed at all. Found the hard way on `run.services.update`: `terraform apply` created/
+  updated the Cloud Run service fine, then 403'd on `run.operations.get` while polling the
+  operation it had just kicked off. `googleapi`/provider errors for this failure mode name the
+  *operation's* resource path (`.../operations/<uuid>`), not the service/resource path — don't
+  mistake it for a missing permission on the resource itself. `githubDeployerCloudRun` has
+  `run.operations.get`; `githubDeployerComputeNetwork`/`githubDeployerLoadBalancer` have
+  `compute.globalOperations.get`/`compute.regionOperations.get` (Compute Engine's mutating APIs
+  are async too) plus `vpcaccess.operations.get` (VPC connector creation is its own,
+  separately-permissioned async API, not covered by the `compute.*` operations permissions).
+  No `zoneOperations.get` — nothing this repo manages is zone-scoped. Secret Manager, Pub/Sub,
+  Cloud KMS, Cloud Monitoring/Logging, and IAM service-account management are all confirmed
+  synchronous in this repo's actual usage (their resources were created successfully without
+  any `*.operations.get` grant) — don't add operations permissions for those preemptively, but
+  when adding a *new* custom role for a service not yet covered here, check whether its
+  mutating calls return an Operation before assuming resource-CRUD permissions alone are
+  enough.
 - Creating (not just writing to) an Artifact Registry repo needs
   `artifactregistry.repositories.create`/`.delete` specifically — confirmed via `gcloud iam
   roles describe`: the predefined `.repoAdmin` role has neither at all (it's content/IAM
   management on a repo that already exists), and `.writer` only grants push/pull. Don't reach
   for either when the caller is the one provisioning the repo.
+- `githubDeployerArtifactRegistry` also includes `artifactregistry.repositories.uploadArtifacts`
+  — needed for `deploy.yml`'s `docker push` step, not by any `google_artifact_registry_*`
+  Terraform resource. The permission audit that produced the nine custom roles only enumerated
+  what Terraform itself manages; plain `gcloud`/`docker` CLI calls the pipeline makes as
+  `github-deployer` outside `terraform apply` are a separate surface and can be missed the same
+  way this one was — check `.github/workflows/*.yml` and `Taskfile.yml` for non-Terraform
+  `gcloud`/`docker` invocations too when auditing what a custom role needs, not just the
+  `live/`/`modules/` resource graph.
+- `githubDeployerArtifactRegistry` also includes `artifactregistry.repositories.downloadArtifacts`
+  — confirmed the hard way: `terraform apply`'s `run.services.update` call 403'd without it. Cloud
+  Run validates at deploy time that the *caller* (`github-deployer`, not just the runtime service
+  agent) can read the image being deployed — an initial assumption that the runtime service
+  agent's own pull access would be enough, and that the deploy SA only ever pushes, was wrong.
+  Don't assume a predefined role's push/pull split (`.writer` grants both) maps cleanly onto
+  "the deploy SA only pushes" just because that's the only *direct* Artifact Registry action it
+  performs — Cloud Run's own deploy-time checks add a second, indirect need for read access.
 - A `create` call for a resource that doesn't exist yet is generally authorized against the
   *parent* (its location), not the resource's own `resource.name` — a single
   `resource.name == <child>` check would not be enough to let the deploy SA provision the

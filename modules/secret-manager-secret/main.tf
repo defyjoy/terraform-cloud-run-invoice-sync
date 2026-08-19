@@ -34,9 +34,6 @@ resource "google_pubsub_topic" "rotation" {
   name    = "${var.secret_id}-rotation"
 }
 
-# Secret Manager's own service agent is what publishes the rotation-reminder message when the
-# secret's rotation block fires, not our deploy SA — needs a per-topic grant the same way it
-# already gets a per-key grant on the KMS key above.
 resource "google_pubsub_topic_iam_member" "secretmanager_can_publish_rotation" {
   count = var.rotation_period != null ? 1 : 0
 
@@ -44,6 +41,13 @@ resource "google_pubsub_topic_iam_member" "secretmanager_can_publish_rotation" {
   topic   = google_pubsub_topic.rotation[0].name
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_project_service_identity.secretmanager.email}"
+}
+
+resource "time_sleep" "pubsub_iam_propagation" {
+  count = var.rotation_period != null ? 1 : 0
+
+  depends_on      = [google_pubsub_topic_iam_member.secretmanager_can_publish_rotation]
+  create_duration = "60s"
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -79,7 +83,10 @@ resource "google_secret_manager_secret" "this" {
     ignore_changes = [rotation]
   }
 
-  depends_on = [google_kms_crypto_key_iam_member.secretmanager_can_use_key]
+  depends_on = [
+    google_kms_crypto_key_iam_member.secretmanager_can_use_key,
+    time_sleep.pubsub_iam_propagation,
+  ]
 }
 
 resource "google_secret_manager_secret_iam_member" "admin_members" {
