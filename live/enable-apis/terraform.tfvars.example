@@ -18,4 +18,5 @@ services = [
   "storage.googleapis.com",
   "serviceusage.googleapis.com",
   "vpcaccess.googleapis.com",
+  "cloudkms.googleapis.com",
 ]

@@ -166,6 +166,20 @@ locals {
       role      = "roles/compute.loadBalancerAdmin"
       condition = null
     }
+
+    # modules/secret-manager-secret (../db-secrets) creates a KMS key ring + key for CMEK.
+    # cloudkms.keyRings.create/.cryptoKeys.create are authorized against the project/location,
+    # not the not-yet-existing key ring, so this can't be scoped to just this one key ring in
+    # advance — same class of gap as secretmanager_admin/project_iam_admin above. Cloud KMS's
+    # IAM Conditions support for KeyRing/CryptoKey isn't confirmed, and a condition that looks
+    # syntactically correct has already been shown (artifactregistry_admin, run_admin above) to
+    # silently never match — not worth guessing on here either. Project-wide/unconditioned, a
+    # discussed and accepted trade-off: the deploy SA can manage any KMS key in the project, not
+    # just this one.
+    cloudkms_admin = {
+      role      = "roles/cloudkms.admin"
+      condition = null
+    }
   }
 }
 

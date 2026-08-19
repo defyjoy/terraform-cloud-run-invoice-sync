@@ -184,3 +184,16 @@ Rules for working on this repo's Terraform. These override default behavior.
   `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
   `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not
   `setIamPolicy` on topics, which `.admin` also grants.
+- `github-deployer` holds `roles/cloudkms.admin`, project-wide, so `../db-secrets` (via
+  `modules/secret-manager-secret`) can create the CMEK key ring/key protecting the
+  `db-password` secret. Same class of gap as `secretmanager_admin` above:
+  `cloudkms.keyRings.create`/`.cryptoKeys.create` are authorized against the project/location,
+  not the not-yet-existing key ring, so this can't be scoped to just this one key ring in
+  advance, and Cloud KMS's IAM Conditions support for `KeyRing`/`CryptoKey` isn't confirmed —
+  same unverified-condition risk already documented for `artifactregistry_admin`/`run_admin`
+  above. A discussed, accepted trade-off, confirmed with the user before applying (see this
+  bullet's own stop-and-ask above): the deploy SA can manage any KMS key in the project, not
+  just this one. Runtime decryption is unaffected by this — Secret Manager's own service
+  identity (`google_project_service_identity` in `modules/secret-manager-secret`) does the
+  encrypt/decrypt on behalf of whoever holds `secretAccessor`, so the Cloud Run runtime SA never
+  needs any direct KMS grant of its own.

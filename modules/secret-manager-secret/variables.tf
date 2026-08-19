@@ -19,3 +19,15 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "kms_key_rotation_period" {
+  description = "How often the CMEK key itself advances to a new key version, e.g. \"7776000s\" (90 days). Google schedules this automatically from creation time; older key versions are retained (not destroyed), so existing secret versions stay decryptable."
+  type        = string
+  default     = "7776000s"
+}
+
+variable "rotation_period" {
+  description = "How often Secret Manager publishes a rotation-reminder notification to Pub/Sub, e.g. \"7776000s\" (90 days). This does not rotate the secret value itself — Secret Manager has no way to generate a new one — it only reminds whoever owns the value to do so out-of-band. Null disables rotation notifications entirely (no topic is created)."
+  type        = string
+  default     = null
+}
