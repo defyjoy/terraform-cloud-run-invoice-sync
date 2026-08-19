@@ -1,7 +1,3 @@
-# Secret Manager encrypts/decrypts secret payloads via its own service identity, not the
-# caller's credentials — a principal with roles/secretmanager.secretAccessor (e.g. Cloud Run's
-# runtime SA, granted elsewhere) never needs any direct Cloud KMS permission of its own for this
-# to work. See https://cloud.google.com/secret-manager/docs/cmek.
 resource "google_project_service_identity" "secretmanager" {
   provider = google-beta
 
@@ -9,8 +5,6 @@ resource "google_project_service_identity" "secretmanager" {
   service = "secretmanager.googleapis.com"
 }
 
-# Automatic replication's CMEK support requires the key to be in the global multi-region
-# specifically — Secret Manager rejects any other location for this replication mode.
 resource "google_kms_key_ring" "this" {
   project  = var.project_id
   name     = "${var.secret_id}-keyring"
@@ -23,10 +17,6 @@ resource "google_kms_crypto_key" "this" {
   rotation_period = var.kms_key_rotation_period
 
   lifecycle {
-    # Destroying this key (or letting a careless replace happen) would permanently strand every
-    # secret version encrypted under it — KMS key rings themselves can never be deleted, but the
-    # key inside one can, and doing so is irreversible in a way applying Terraform elsewhere
-    # can't be.
     prevent_destroy = true
   }
 }
@@ -37,13 +27,23 @@ resource "google_kms_crypto_key_iam_member" "secretmanager_can_use_key" {
   member        = "serviceAccount:${google_project_service_identity.secretmanager.email}"
 }
 
-# Rotation notification target — Secret Manager has no way to generate a new secret value
-# itself, so "rotation" here means a scheduled Pub/Sub reminder, not an automatic value change.
 resource "google_pubsub_topic" "rotation" {
   count = var.rotation_period != null ? 1 : 0
 
   project = var.project_id
   name    = "${var.secret_id}-rotation"
+}
+
+# Secret Manager's own service agent is what publishes the rotation-reminder message when the
+# secret's rotation block fires, not our deploy SA — needs a per-topic grant the same way it
+# already gets a per-key grant on the KMS key above.
+resource "google_pubsub_topic_iam_member" "secretmanager_can_publish_rotation" {
+  count = var.rotation_period != null ? 1 : 0
+
+  project = var.project_id
+  topic   = google_pubsub_topic.rotation[0].name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_project_service_identity.secretmanager.email}"
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -68,17 +68,13 @@ resource "google_secret_manager_secret" "this" {
   dynamic "rotation" {
     for_each = var.rotation_period != null ? [1] : []
     content {
-      rotation_period = var.rotation_period
-      # Only used to seed the very first reminder — see the ignore_changes below for why.
+      rotation_period    = var.rotation_period
       next_rotation_time = timeadd(plantimestamp(), var.rotation_period)
     }
   }
 
   labels = var.labels
 
-  # Secret Manager itself advances next_rotation_time by rotation_period every time a reminder
-  # fires; without this, every subsequent plan would fight that and try to reset it back to
-  # "now + rotation_period" as computed at apply time.
   lifecycle {
     ignore_changes = [rotation]
   }

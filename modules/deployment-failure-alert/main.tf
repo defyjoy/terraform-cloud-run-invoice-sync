@@ -23,8 +23,6 @@ resource "google_monitoring_notification_channel" "email" {
   }
 }
 
-# Google's documented log line for a Cloud Run revision that never became ready — covers both
-# "image failed to start" and "container didn't listen on $PORT in time" failure modes.
 resource "google_monitoring_alert_policy" "revision_failed" {
   project      = var.project_id
   display_name = "${var.service_name}: revision failed to become ready"

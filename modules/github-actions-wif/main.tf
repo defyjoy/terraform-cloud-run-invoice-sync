@@ -18,9 +18,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  # Narrows token exchange to this one repo AND this one ref — without the ref check, any
-  # branch or tag in the repo (not just the one deploy.yml actually deploys from) could mint a
-  # token that impersonates the deploy service account below.
   attribute_condition = "assertion.repository == \"${var.github_owner}/${var.github_repo}\" && assertion.ref == \"${var.github_ref}\""
 
   oidc {
@@ -38,39 +35,22 @@ module "deploy_service_account" {
 }
 
 locals {
-  # Every project-level role the deploy SA holds. condition = null means unconditioned/
-  # project-wide; see CLAUDE.md's IAM section for why each unconditioned entry couldn't be
-  # scoped further.
   deploy_sa_roles = {
-    # Cloud Run's Service resource does not support IAM Conditions at all (Google's own docs:
-    # "Supports IAM Conditions: No") — confirmed after a resource.name-scoped condition here
-    # looked correct (matched run.services.create's own parent-location requirement) and still
-    # denied every request, the same silent-no-op failure mode as artifactregistry_admin below.
     run_admin = {
       role      = "roles/run.admin"
       condition = null
     }
 
-    # Artifact Registry has no resource.name-based IAM Conditions at all, confirmed by a real
-    # 403 persisting even when resource.name matched exactly what the error itself reported.
     artifactregistry_admin = {
       role      = "roles/artifactregistry.admin"
       condition = null
     }
 
-    # This project also hosts the google-cloud-terraform repo's hub/dev VPCs, so this grant
-    # lets the deploy SA touch that networking too, not just ../network's. Not scoped via IAM
-    # Conditions because Compute Engine's condition support isn't confirmed for
-    # networks/subnetworks/routers, and a condition that looks correct can silently never
-    # match (see artifactregistry_admin above) — not worth risking on infra with this much
-    # more to lose if guessed wrong.
     compute_network_admin = {
       role      = "roles/compute.networkAdmin"
       condition = null
     }
 
-    # compute.networkAdmin excludes firewall rules by design; ../network's allow_internal rule
-    # needs this separately.
     compute_security_admin = {
       role      = "roles/compute.securityAdmin"
       condition = null
@@ -81,101 +61,67 @@ locals {
       condition = null
     }
 
-    # roles/pubsub.editor, not .admin: needed for ../invoice-sync's deployment_alert module to
-    # create its Pub/Sub topic. .editor grants topics.create/get/list/update/delete/publish but
-    # not setIamPolicy, unlike .admin.
     pubsub_editor = {
       role      = "roles/pubsub.editor"
       condition = null
     }
 
-    # Project-wide: lets the deploy SA setIamPolicy on every service account in the project
-    # (create/delete/update, plus grant itself actAs via ../invoice-sync's own
-    # service_account_users), not just the Cloud Run runtime SA it creates. There's no way to
-    # scope this to one SA when that SA doesn't exist yet at plan time — creating it doesn't by
-    # itself grant rights to set its IAM policy. A discussed, accepted trade-off: the
-    # alternative was a one-time manual bootstrap grant scoped to just the runtime SA. See
-    # CLAUDE.md's IAM section.
+    # ../db-secrets needs to grant the Secret Manager service agent publish rights on the
+    # db-password-rotation topic it creates (modules/secret-manager-secret's
+    # google_pubsub_topic_iam_member.secretmanager_can_publish_rotation) — that's
+    # pubsub.topics.setIamPolicy, which pubsub_editor above deliberately excludes. Only
+    # roles/pubsub.admin includes it. Scoped via a resource.name condition to just this one
+    # topic rather than granting admin project-wide: the topic name is deterministic
+    # (projects/<id>/topics/db-password-rotation) even before it exists, the same reasoning
+    # CLAUDE.md's IAM section uses for Secret Manager. Unlike Secret Manager, Pub/Sub Topic's
+    # IAM Conditions support isn't confirmed here (Google's docs didn't clearly confirm or
+    # rule it out) — if this condition turns out to be a silent no-op like the Cloud Run/
+    # Artifact Registry cases, the fix is to drop the condition and accept pubsub.admin
+    # project-wide, not to add a second, different condition guess.
+    pubsub_rotation_topic_admin = {
+      role = "roles/pubsub.admin"
+      condition = {
+        title       = "db-password-rotation-topic-only"
+        description = "Only the db-password-rotation Pub/Sub topic, for setIamPolicy"
+        expression  = "resource.name == \"projects/${var.project_id}/topics/db-password-rotation\""
+      }
+    }
+
     service_account_admin = {
       role      = "roles/iam.serviceAccountAdmin"
       condition = null
     }
 
-    # Project-wide: resourcemanager.projects.setIamPolicy has no resource-scoped variant, so
-    # granting the Cloud Run runtime SA's own project roles (logging.logWriter,
-    # cloudtrace.agent) from the pipeline requires this. Same trade-off as
-    # service_account_admin above — discussed and accepted in place of a manual bootstrap step.
     project_iam_admin = {
       role      = "roles/resourcemanager.projectIamAdmin"
       condition = null
     }
 
-    # Project-wide: secretmanager.secrets.create is authorized against the project (the
-    # parent), not the not-yet-existing secret, so this can't be scoped to one secret in
-    # advance — same class of gap as project_iam_admin above. Lets ../db-secrets create the
-    # db-password secret and manage IAM policy on any secret in the project from the pipeline,
-    # not just this one. Only enable-apis and github-actions-wif stay manually applied — every
-    # other live/* stack, including db-secrets, is pipeline-applied; see CLAUDE.md's IAM
-    # section.
     secretmanager_admin = {
       role      = "roles/secretmanager.admin"
       condition = null
     }
 
-    # modules/deployment-failure-alert creates two NotificationChannels (pubsub, email); their
-    # parent is the project and NotificationChannel isn't confirmed to support IAM Conditions,
-    # so this is project-wide/unconditioned, same precedent as pubsub_editor above.
-    # .notificationChannelEditor grants exactly notificationChannels.create/get/list/update/
-    # delete/sendVerificationCode/verify — no alert-policy or workspace-admin surface.
     monitoring_notification_channel_editor = {
       role      = "roles/monitoring.notificationChannelEditor"
       condition = null
     }
 
-    # modules/deployment-failure-alert also creates the AlertPolicy itself
-    # (google_monitoring_alert_policy.revision_failed). NotificationChannel and AlertPolicy are
-    # separate permission surfaces in Cloud Monitoring IAM — notificationChannelEditor above
-    # covers notificationChannels.* only, not alertPolicies.*, so alert_policy.create still 403s
-    # without this. Same project-wide/unconditioned rationale: parent is the project, and
-    # AlertPolicy's IAM Conditions support isn't confirmed. alertPolicyEditor grants exactly
-    # alertPolicies.create/get/list/update/delete — no dashboards/uptime-checks/metrics-writer
-    # surface, unlike the broader roles/monitoring.editor.
     monitoring_alert_policy_editor = {
       role      = "roles/monitoring.alertPolicyEditor"
       condition = null
     }
 
-    # revision_failed's condition_matched_log block routes creation through Cloud Logging's
-    # own log-based-alerting API, not just Monitoring — alertPolicyEditor alone still 403s on
-    # logging.notificationRules.create. Checked every predefined role for this permission: only
-    # roles/logging.admin (80 perms) and roles/logging.configWriter (60 perms) include it, no
-    # narrower predefined role exists, so configWriter is the least-privilege option available
-    # (it also grants sinks/exclusions/log-based-metrics/buckets management, which is more than
-    # this stack needs, but there's nothing tighter to reach for). Project-wide/unconditioned:
-    # parent is the project and NotificationRule's IAM Conditions support isn't confirmed.
     logging_config_writer = {
       role      = "roles/logging.configWriter"
       condition = null
     }
 
-    # modules/serverless-lb creates a regional NEG; compute.networkAdmin above covers
-    # regionNetworkEndpointGroups.get/list/use but not .create. loadBalancerAdmin adds .create
-    # plus the backend-service/URL-map permissions the lb-http submodule also needs. Same
-    # unconditioned rationale as compute_network_admin above.
     compute_load_balancer_admin = {
       role      = "roles/compute.loadBalancerAdmin"
       condition = null
     }
 
-    # modules/secret-manager-secret (../db-secrets) creates a KMS key ring + key for CMEK.
-    # cloudkms.keyRings.create/.cryptoKeys.create are authorized against the project/location,
-    # not the not-yet-existing key ring, so this can't be scoped to just this one key ring in
-    # advance — same class of gap as secretmanager_admin/project_iam_admin above. Cloud KMS's
-    # IAM Conditions support for KeyRing/CryptoKey isn't confirmed, and a condition that looks
-    # syntactically correct has already been shown (artifactregistry_admin, run_admin above) to
-    # silently never match — not worth guessing on here either. Project-wide/unconditioned, a
-    # discussed and accepted trade-off: the deploy SA can manage any KMS key in the project, not
-    # just this one.
     cloudkms_admin = {
       role      = "roles/cloudkms.admin"
       condition = null
@@ -200,23 +146,12 @@ resource "google_project_iam_member" "deploy_sa_roles" {
   }
 }
 
-# Lets the pool's tokens, scoped to this repo, impersonate the deploy service account —
-# equivalent to a key file but without one ever existing.
-#
-# A plain resource, not the service_accounts_iam module: that module's for_each is built from
-# a set that includes this principalSet string, and google_iam_workload_identity_pool.github.name
-# (it embeds the project *number*, resolved by the API) is unknown until the pool is actually
-# created — for_each can't plan over a set with unknown members. A single resource has no such
-# restriction; an unknown attribute value on one resource is fine, it just applies in dependency
-# order.
 resource "google_service_account_iam_member" "workload_identity_binding" {
   service_account_id = module.deploy_service_account.service_account.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_owner}/${var.github_repo}"
 }
 
-# The pipeline runs terraform init/apply itself, so its deploy service account needs write
-# access to the state bucket.
 resource "google_storage_bucket_iam_member" "deploy_can_write_state" {
   bucket = var.state_bucket
   role   = "roles/storage.objectAdmin"

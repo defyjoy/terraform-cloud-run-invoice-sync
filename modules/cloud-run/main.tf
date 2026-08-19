@@ -73,22 +73,14 @@ module "cloud_run" {
   service_labels = var.labels
 }
 
-# Lets external identities (e.g. a CI/CD deploy service account) deploy new revisions running
-# as the service's own service account, without granting them iam.serviceAccountUser on the
-# whole project.
 resource "google_service_account_iam_member" "service_account_users" {
   for_each = toset(var.service_account_users)
 
-  # module.cloud_run.service_account_id is {id, email, member} despite its name — it's not
-  # itself a usable resource ID.
   service_account_id = "projects/${var.project_id}/serviceAccounts/${module.cloud_run.service_account_id.email}"
   role               = "roles/iam.serviceAccountUser"
   member             = each.value
 }
 
-# Per-secret access for the runtime service account, instead of a blanket project-wide
-# roles/secretmanager.secretAccessor that could read any secret in the project. Empty by
-# default — nothing is granted until the service actually names secrets it needs.
 resource "google_secret_manager_secret_iam_member" "runtime_secret_access" {
   for_each = toset(var.secret_accessor_secrets)
 

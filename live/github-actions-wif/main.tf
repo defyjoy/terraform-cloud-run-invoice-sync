@@ -1,6 +1,3 @@
-# Deploy identity for GitHub Actions, kept in its own state and applied by hand — it has to
-# exist before the pipeline can authenticate at all, so it can't be part of the stack (see
-# ../invoice-sync) the pipeline itself manages.
 module "github_wif" {
   source = "../../modules/github-actions-wif"
 

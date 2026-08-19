@@ -1,5 +1,3 @@
-# The lb-http module wires a backend service to whatever groups it's given but doesn't create
-# NEGs itself, so the serverless NEG pointing at the Cloud Run service is created here.
 resource "google_compute_region_network_endpoint_group" "this" {
   project               = var.project_id
   name                  = "${var.name}-neg"
@@ -11,10 +9,6 @@ resource "google_compute_region_network_endpoint_group" "this" {
   }
 }
 
-# Reserved here (instead of letting the lb-http submodule reserve it internally, its default)
-# so the IP is known before the self-signed cert below is generated — browsers require a SAN
-# matching the address being connected to; without this the cert would carry no SAN at all,
-# which Chrome/Firefox reject outright, not just warn on.
 resource "google_compute_global_address" "this" {
   project    = var.project_id
   name       = "${var.name}-address"
@@ -22,11 +16,6 @@ resource "google_compute_global_address" "this" {
   labels     = var.labels
 }
 
-# A Google-managed cert (domains != []) needs a domain that already resolves to the LB's IP —
-# it can never provision otherwise. Until a real domain exists, ssl = true falls back to a
-# self-signed cert so traffic is still encrypted in transit; browsers will show a trust warning
-# since nothing signs it, but that's a trust-UX gap, not an encryption gap. Switches to the
-# managed cert automatically the moment domains is non-empty.
 locals {
   use_self_signed_cert = var.ssl && length(var.domains) == 0
 }
@@ -48,9 +37,6 @@ resource "tls_self_signed_cert" "self_signed" {
     organization = "Self-signed placeholder — no domain configured yet"
   }
 
-  # Required: browsers validate against SAN, not CN. A cert with no SAN is rejected outright,
-  # not merely shown as untrusted — this is what made the previous cert fail in-browser even
-  # though the TLS handshake itself succeeded.
   ip_addresses = [google_compute_global_address.this.address]
 
   validity_period_hours = 8760
@@ -61,8 +47,6 @@ resource "tls_self_signed_cert" "self_signed" {
   ]
 }
 
-# Pins TLS 1.2+ and drops weak ciphers so the fix doesn't depend on whichever default GCP
-# happens to apply. Only needed (and only created) once SSL is actually turned on.
 resource "google_compute_ssl_policy" "this" {
   count = var.ssl ? 1 : 0
 
@@ -105,8 +89,6 @@ module "lb" {
       iap_config = {
         enable = false
       }
-      # HIPAA §164.312(b) audit-controls: this LB is the entry point for every request to the
-      # service, so its access logs are the only infra-level record of who accessed what.
       log_config = {
         enable      = true
         sample_rate = 1.0
