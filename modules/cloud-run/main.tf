@@ -26,6 +26,28 @@ module "cloud_run" {
         }
         cpu_idle = var.cpu_idle
       }
+
+      startup_probe = var.startup_probe == null ? null : {
+        failure_threshold     = var.startup_probe.failure_threshold
+        initial_delay_seconds = var.startup_probe.initial_delay_seconds
+        timeout_seconds       = var.startup_probe.timeout_seconds
+        period_seconds        = var.startup_probe.period_seconds
+        http_get = {
+          path = var.startup_probe.path
+          port = tostring(var.port)
+        }
+      }
+
+      liveness_probe = var.liveness_probe == null ? null : {
+        failure_threshold     = var.liveness_probe.failure_threshold
+        initial_delay_seconds = var.liveness_probe.initial_delay_seconds
+        timeout_seconds       = var.liveness_probe.timeout_seconds
+        period_seconds        = var.liveness_probe.period_seconds
+        http_get = {
+          path = var.liveness_probe.path
+          port = tostring(var.port)
+        }
+      }
     }
   ]
 

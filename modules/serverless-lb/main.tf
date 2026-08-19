@@ -11,6 +11,17 @@ resource "google_compute_region_network_endpoint_group" "this" {
   }
 }
 
+# Reserved here (instead of letting the lb-http submodule reserve it internally, its default)
+# so the IP is known before the self-signed cert below is generated — browsers require a SAN
+# matching the address being connected to; without this the cert would carry no SAN at all,
+# which Chrome/Firefox reject outright, not just warn on.
+resource "google_compute_global_address" "this" {
+  project    = var.project_id
+  name       = "${var.name}-address"
+  ip_version = "IPV4"
+  labels     = var.labels
+}
+
 # A Google-managed cert (domains != []) needs a domain that already resolves to the LB's IP —
 # it can never provision otherwise. Until a real domain exists, ssl = true falls back to a
 # self-signed cert so traffic is still encrypted in transit; browsers will show a trust warning
@@ -37,6 +48,11 @@ resource "tls_self_signed_cert" "self_signed" {
     organization = "Self-signed placeholder — no domain configured yet"
   }
 
+  # Required: browsers validate against SAN, not CN. A cert with no SAN is rejected outright,
+  # not merely shown as untrusted — this is what made the previous cert fail in-browser even
+  # though the TLS handshake itself succeeded.
+  ip_addresses = [google_compute_global_address.this.address]
+
   validity_period_hours = 8760
   allowed_uses = [
     "key_encipherment",
@@ -61,6 +77,9 @@ module "lb" {
 
   name    = var.name
   project = var.project_id
+
+  create_address = false
+  address        = google_compute_global_address.this.address
 
   ssl                             = var.ssl
   managed_ssl_certificate_domains = var.domains

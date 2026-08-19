@@ -48,6 +48,30 @@ variable "env_vars" {
   default     = {}
 }
 
+variable "startup_probe" {
+  description = "HTTP startup probe run once per revision before it's marked ready and starts receiving traffic. Null disables it (Cloud Run still applies its own default TCP startup check)."
+  type = object({
+    path                  = optional(string, "/healthz")
+    failure_threshold     = optional(number, 3)
+    initial_delay_seconds = optional(number, 0)
+    timeout_seconds       = optional(number, 3)
+    period_seconds        = optional(number, 10)
+  })
+  default = {}
+}
+
+variable "liveness_probe" {
+  description = "HTTP liveness probe run continuously against a live instance; Cloud Run restarts the container if it fails. Null disables it."
+  type = object({
+    path                  = optional(string, "/healthz")
+    failure_threshold     = optional(number, 3)
+    initial_delay_seconds = optional(number, 0)
+    timeout_seconds       = optional(number, 3)
+    period_seconds        = optional(number, 10)
+  })
+  default = null
+}
+
 variable "env_secret_vars" {
   description = "Environment variables sourced from Secret Manager, keyed by env var name. Each value names the secret and version to mount."
   type = map(object({
