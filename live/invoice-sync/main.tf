@@ -65,6 +65,6 @@ module "deployment_alert" {
   source = "../../modules/deployment-failure-alert"
 
   project_id         = var.project_id
-  service_name       = module.cloud_run.service_name
+  service_name       = var.service_name
   notification_email = var.notification_email
 }

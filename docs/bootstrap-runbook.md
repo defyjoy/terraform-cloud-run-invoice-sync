@@ -63,6 +63,56 @@ Or from a file (e.g. one already used to seed the database itself):
 gcloud secrets versions add db-password --project=yeti-504903 --data-file=./db-password.txt
 ```
 
+## 7. Verify the deployment-failure-alert email channel
+
+Terraform creates the email notification channel (`modules/deployment-failure-alert`) but
+cannot verify it — Google requires a code sent to the actual inbox, and gcloud has no
+`send-verification-code`/`verify` subcommand, so this is a one-time manual REST call. Skip this
+and the channel silently drops every notification with no error anywhere (alert policy still
+shows `enabled: true`, no Terraform/pipeline failure).
+
+```bash
+CHANNEL=$(gcloud alpha monitoring channels list --project=yeti-504903 \
+  --filter='displayName:"deployment failures (email)"' --format='value(name)')
+
+TOKEN=$(gcloud auth print-access-token)
+
+# 1. Send the code — lands in the address configured as notification_email
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://monitoring.googleapis.com/v3/${CHANNEL}:sendVerificationCode" -d '{}'
+
+# 2. Verify with the code from that email
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://monitoring.googleapis.com/v3/${CHANNEL}:verify" -d '{"code":"<code-from-email>"}'
+
+# 3. Confirm
+gcloud alpha monitoring channels describe "$CHANNEL" --format='value(verificationStatus)'
+# should print VERIFIED
+```
+
+Re-run whenever the channel is recreated (e.g. `terraform destroy`/`apply` on `live/invoice-sync`,
+or a `notification_email` change — Terraform's `google_monitoring_notification_channel` replaces
+the channel on some field changes, resetting verification).
+
+## 8. Force a test deployment failure
+
+Exercises the alert end to end without touching Terraform-managed resources — see
+`live/invoice-sync/variables.tf`'s `expected_db_password` and `app/server.js`'s `/readyz`.
+
+```bash
+# Break it: set db-password to something other than expected_db_password
+# (live/invoice-sync/.auto.tfvars)
+gcloud secrets versions add db-password --project=yeti-504903 \
+  --data-file=<(printf '%s' "deliberately-wrong-value")
+
+# Push any commit to main to deploy a new revision — /readyz will 503 forever, the
+# revision never becomes Ready, and the alert (once its channel is verified, step 7) fires.
+
+# Fix it: restore the real value so the next deploy succeeds
+gcloud secrets versions add db-password --project=yeti-504903 \
+  --data-file=<(printf '%s' "invoice-sync-test-password")
+```
+
 ## Checks
 
 Confirm an API is enabled:
@@ -81,4 +131,11 @@ Confirm the repo variables the pipeline reads:
 
 ```bash
 gh variable list
+```
+
+Confirm the email notification channel is verified:
+
+```bash
+gcloud alpha monitoring channels list --project=yeti-504903 \
+  --filter='displayName:"deployment failures (email)"' --format='value(verificationStatus)'
 ```
