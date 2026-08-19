@@ -87,3 +87,8 @@ variable "db_password_secret_id" {
   description = "ID of the db-password secret, created by ../db-secrets (not by this stack). The runtime SA is granted roles/secretmanager.secretAccessor on it, scoped to just this secret, via ../db-secrets' own grant of roles/secretmanager.admin (scoped to just this secret) to the deploy SA. Must match ../db-secrets' own db_password_secret_id."
   type        = string
 }
+
+variable "expected_db_password" {
+  description = "Plaintext value app/server.js's /readyz compares the DB_PASSWORD secret against. A mismatch (e.g. after changing the db-password secret's value without updating this) fails the startup probe and the revision never becomes Ready, exercising modules/deployment-failure-alert without touching Terraform-managed resources. This value lands in Terraform state as cleartext (it's a plain env_var, not env_secret_vars) — keep it a test sentinel, never a real credential, for as long as app/ stays the placeholder \"Hello, World!\" server it is today."
+  type        = string
+}

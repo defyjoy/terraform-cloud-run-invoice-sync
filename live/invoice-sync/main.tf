@@ -9,6 +9,14 @@ module "cloud_run" {
 
   ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
+  startup_probe = {
+    path = "/readyz"
+  }
+
+  env_vars = {
+    EXPECTED_DB_PASSWORD = var.expected_db_password
+  }
+
   vpc_access = {
     egress    = var.vpc_egress
     connector = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
