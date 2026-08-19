@@ -17,7 +17,7 @@ permissions:
   id-token: write
 
 jobs:
-  build-and-deploy:
+  plan-invoice-sync-prereqs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +44,75 @@ jobs:
       # Taskfile.yml's -backend-config via Task's automatic env-var pickup, see CLAUDE.md.
       # enable-apis and github-actions-wif are the only stacks applied manually, never by the
       # pipeline — see CLAUDE.md's IAM section.
-      - name: Ensure the Artifact Registry repo, VPC connector and db-password secret exist
+      - name: Plan artifact-registry, network and db-secrets
+        run: |
+          ACTION=plan task artifact-registry
+          ACTION=plan task network
+          ACTION=plan task db-secrets
+
+      # Uploaded relative to live/, so apply-invoice-sync-prereqs's download lands each tfplan back in the
+      # same <stack>/tfplan path _tf's apply branch looks for.
+      - name: Upload infra tfplans
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-tfplans
+          path: |
+            live/artifact-registry/tfplan
+            live/network/tfplan
+            live/db-secrets/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  apply-invoice-sync-prereqs:
+    needs: plan-invoice-sync-prereqs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      - name: Download infra tfplans
+        uses: actions/download-artifact@v4
+        with:
+          name: infra-tfplans
+          path: live
+
+      # _tf's apply branch applies live/<stack>/tfplan directly (no re-plan, no -var — the
+      # plan already fixed everything) whenever that file exists, which it now does thanks to
+      # the download above. Same three stacks, same order, as the plan job.
+      - name: Apply artifact-registry, network and db-secrets from their planned tfplans
         run: |
           ACTION=apply task artifact-registry
           ACTION=apply task network
           ACTION=apply task db-secrets
+
+  build-and-push:
+    needs: apply-invoice-sync-prereqs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
@@ -60,8 +124,71 @@ jobs:
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Deploy invoice-sync
-        run: ACTION=apply task invoice-sync -- -var image_tag=${{ github.sha }}
+  plan-invoice-sync:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      # image_tag has to be fixed at plan time (it's baked into the saved plan) — passing it
+      # again at apply time isn't possible once a plan file exists, see Taskfile.yml's _tf.
+      - name: Plan invoice-sync
+        run: ACTION=plan task invoice-sync -- -var image_tag=${{ github.sha }}
+
+      - name: Upload invoice-sync tfplan
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-sync-tfplan
+          path: live/invoice-sync/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  apply-invoice-sync:
+    needs: plan-invoice-sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      - name: Download invoice-sync tfplan
+        uses: actions/download-artifact@v4
+        with:
+          name: invoice-sync-tfplan
+          path: live/invoice-sync
+
+      - name: Apply invoice-sync from its planned tfplan
+        run: ACTION=apply task invoice-sync
 
       # Read-only `terraform output`, not init/plan/apply, so it doesn't go through the
       # Taskfile _tf pattern (see CLAUDE.md) — task invoice-sync above already left

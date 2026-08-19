@@ -77,6 +77,19 @@ Rules for working on this repo's Terraform. These override default behavior.
   scoped as narrowly as the resource type allows — see the IAM section), not to carve out
   another bootstrap-only stack. Any such grant that's project-wide and unconditioned still goes
   through the stop-and-ask process in the IAM section first.
+- Every pipeline-applied stack goes through separate plan and apply jobs in `deploy.yml`, never
+  a single `ACTION=apply` step — `ACTION=plan task <name>` first, saving a `tfplan` file
+  (`Taskfile.yml`'s `_tf`, when `ACTION=plan`, always runs `terraform plan -out=tfplan`), then
+  `actions/upload-artifact`/`download-artifact` to carry that exact file into a separate `needs:`
+  job, then `ACTION=apply task <name>` there — `_tf`'s apply branch runs `terraform apply
+  tfplan` (no re-plan, no `-var`) whenever that file is present, only falling back to a plain
+  `terraform apply -auto-approve` when it isn't (the local, no-artifact path — `ACTION=apply
+  task <name>` run standalone still works exactly as before). This means what gets applied is
+  provably the same plan a human (or a future required-review gate) could inspect, not a fresh
+  plan computed at apply time against whatever state happens to exist by then. Variables like
+  `invoice-sync`'s `image_tag` must be passed at the `plan` step (`ACTION=plan task invoice-sync
+  -- -var image_tag=...`) — a saved plan file already fixes every variable, and `terraform apply
+  <planfile>` rejects `-var` outright.
 
 ## IAM
 

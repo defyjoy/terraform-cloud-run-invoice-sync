@@ -81,4 +81,16 @@ tasks:
         terraform -chdir={{.DIR}} init -input=false -reconfigure \
           -backend-config="bucket={{.STATE_BUCKET}}" \
           -backend-config="prefix={{.PROJECT_ID}}/{{.DIR}}"
-      - terraform -chdir={{.DIR}} {{.ACTION}} -input=false {{.APPROVE}} {{.CLI_ARGS}}
+      - |
+        {{if eq .ACTION "plan"}}
+        terraform -chdir={{.DIR}} plan -input=false -out=tfplan {{.CLI_ARGS}}
+        {{else if eq .ACTION "apply"}}
+        if [ -f {{.DIR}}/tfplan ]; then
+          echo "Applying saved plan {{.DIR}}/tfplan (no -var accepted here — it was fixed at plan time)"
+          terraform -chdir={{.DIR}} apply -input=false tfplan
+        else
+          terraform -chdir={{.DIR}} apply -input=false {{.APPROVE}} {{.CLI_ARGS}}
+        fi
+        {{else}}
+        terraform -chdir={{.DIR}} destroy -input=false {{.APPROVE}} {{.CLI_ARGS}}
+        {{end}}
