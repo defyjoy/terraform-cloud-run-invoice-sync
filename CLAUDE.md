@@ -298,3 +298,49 @@ Rules for working on this repo's Terraform. These override default behavior.
   log-based-alerting API and specifically needs `logging.notificationRules.create` — no
   predefined role narrower than `logging.configWriter` (60 permissions, 59 unused) includes
   it, and nothing else in this repo touches Cloud Logging.
+
+## Deployment failure alerting
+
+- `modules/deployment-failure-alert`'s `condition_matched_log` filter must match a log entry
+  that actually reaches the project's `_Default` log bucket — Cloud Monitoring's log-based
+  alerting only evaluates logs routed there, confirmed the hard way: a filter on
+  `protoPayload.status.message:"Ready condition status changed to False"` never fired a single
+  incident despite `gcloud logging read` confirming matching entries existed, because that
+  message lives on a `cloudaudit.googleapis.com/system_event` audit log entry, and this
+  project's `_Default` sink (GCP's own default project configuration, not something this repo
+  set up) explicitly excludes all `cloudaudit.googleapis.com/*` logs
+  (`gcloud logging sinks describe _Default`) — they route only to `_Required` instead. No
+  filter text on an audit-log-only field can ever match, regardless of correctness, the same
+  silent-no-op shape as the IAM Conditions gaps above but on a completely different GCP
+  subsystem. Before writing or changing a `condition_matched_log` filter, check the target log
+  entry's `logName` (`gcloud logging read '<filter>' --format='value(logName)'`) — anything
+  under `cloudaudit.googleapis.com/{activity,system_event,access_transparency}` (or
+  `externalaudit.googleapis.com/*`) is excluded from `_Default` by GCP's default sink config
+  and cannot be used. The current filter instead matches `severity=ERROR` on
+  `logName="run.googleapis.com/varlog/system"` — Cloud Run's own system log stream, a regular
+  (non-audit) log that does reach `_Default`, and empirically carries a clean, low-noise ERROR
+  signal for revision/instance startup failures (confirmed against 2 days of this project's
+  actual log history: every `ERROR` entry there was a genuine startup-probe failure, zero
+  false positives).
+- `modules/deployment-failure-alert` is invoked from `live/invoice-sync/main.tf` with
+  `service_name = var.service_name`, not `module.cloud_run.service_name` — deliberately, even
+  though both resolve to the same value. Passing the module output instead creates a real
+  dependency edge in Terraform's graph (`deployment_alert` → `cloud_run`), and Terraform aborts
+  applying a resource's dependents when the resource it depends on fails to apply. Since a
+  failed Cloud Run deploy is exactly the condition this alerting exists to catch, that coupling
+  meant an alert-policy fix could never reach GCP on the same push that also contains a broken
+  revision — confirmed the hard way: a corrected filter sat committed on `main` for three
+  pipeline runs, all of which failed on the Cloud Run update before ever reaching the
+  now-unrelated alert-policy resource, because the graph made them falsely appear related. Keep
+  passing `var.service_name` (the static input both modules are ultimately built from) to
+  anything alerting-related — don't reintroduce a `module.cloud_run.*` output reference here
+  even if it's more "correct" in the sense of tracking the real deployed value, since
+  `service_name` itself never differs from `var.service_name` in this repo. `module.lb`'s
+  `cloud_run_service_name = module.cloud_run.service_name` is a different, legitimate case —
+  the load balancer's backend NEG genuinely needs the Cloud Run resource to exist first — and
+  should stay as a module-output reference.
+- The email notification channel needs a one-time manual verification step Terraform cannot
+  perform (a code sent to the actual inbox) — see `docs/bootstrap-runbook.md` steps 7-8 for the
+  exact commands (gcloud has no `send-verification-code`/`verify` subcommand; both need a raw
+  REST call). Re-verify whenever the channel is recreated, e.g. a `notification_email` change
+  that Terraform can't do as an in-place update.

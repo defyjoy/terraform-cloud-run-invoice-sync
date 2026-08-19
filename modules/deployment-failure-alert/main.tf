@@ -29,14 +29,14 @@ resource "google_monitoring_alert_policy" "revision_failed" {
   combiner     = "OR"
 
   conditions {
-    display_name = "Ready condition status changed to False"
+    display_name = "Revision failed (run.googleapis.com/varlog/system error)"
 
     condition_matched_log {
       filter = <<-EOT
         resource.type="cloud_run_revision"
         resource.labels.service_name="${var.service_name}"
+        logName="projects/${var.project_id}/logs/run.googleapis.com%2Fvarlog%2Fsystem"
         severity=ERROR
-        protoPayload.status.message:"Ready condition status changed to False"
       EOT
     }
   }
