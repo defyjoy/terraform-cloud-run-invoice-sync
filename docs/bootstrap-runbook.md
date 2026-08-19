@@ -6,9 +6,9 @@ stack is applied by the pipeline (see CLAUDE.md's CI/CD section).
 
 ## 1. Enable Cloud Resource Manager (once, before anything else)
 
-`google_project_service` goes through the Service Usage API, which itself needs Cloud Resource
-Manager enabled to authorize the call — it can't be the thing that enables itself, and the
-deploy SA can't do this either (same bootstrap problem, one layer deeper).
+- `google_project_service` goes through the Service Usage API, which itself needs Cloud
+  Resource Manager enabled to authorize the call — it can't be the thing that enables itself.
+- The deploy SA can't do this either (same bootstrap problem, one layer deeper).
 
 ```bash
 gcloud services enable cloudresourcemanager.googleapis.com --project=yeti-504903
@@ -29,29 +29,70 @@ ACTION=apply task enable-apis
 ACTION=apply task github-actions-wif
 ```
 
-## 4. Set the pipeline's repo variables from github-actions-wif's outputs
+## 4. Install and authenticate the GitHub CLI
+
+- Only needed once per machine.
+- Step 5 uses `gh variable set` to reach the repo's Settings → Secrets and variables → Actions
+  page without leaving the terminal.
+
+```bash
+# macOS
+brew install gh
+
+# Debian/Ubuntu
+(type -p wget >/dev/null || sudo apt install wget -y) \
+  && sudo mkdir -p -m 755 /etc/apt/keyrings \
+  && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+  && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  && sudo apt update && sudo apt install gh -y
+```
+
+```bash
+gh auth login
+```
+
+- Interactive — pick `GitHub.com`, `HTTPS`, and browser-based login.
+- Needs `repo` scope (the default) so `gh variable set` can write to this repo's Actions
+  variables.
+
+Confirm it worked:
+
+```bash
+gh auth status
+```
+
+## 5. Set the pipeline's repo variables from github-actions-wif's outputs
+
+- `gh` takes no repo argument here — it infers the target from the current directory's git
+  `origin` remote.
+- So these must be run from inside a clone of this repo (same assumption step 6's `git push`
+  makes).
+- Running from elsewhere, or scripting this non-interactively, needs an explicit
+  `-R defyjoy/terraform-cloud-run-invoice-sync` on each command instead.
 
 ```bash
 gh variable set WIF_PROVIDER --body "$(terraform -chdir=live/github-actions-wif output -raw workload_identity_provider)"
 gh variable set DEPLOY_SA_EMAIL --body "$(terraform -chdir=live/github-actions-wif output -raw service_account_email)"
 ```
 
-## 5. Trigger the pipeline
+## 6. Trigger the pipeline
 
-Creates the runtime SA, grants it its own project roles and the deploy SA's actAs on it,
-creates the `db-password` secret container, and deploys `invoice-sync` end to end, all in one
-run.
+- Creates the runtime SA, grants it its own project roles and the deploy SA's actAs on it.
+- Creates the `db-password` secret container.
+- Deploys `invoice-sync` end to end, all in one run.
 
 ```bash
 git commit --allow-empty -m "bootstrap: trigger first pipeline run" && git push
 ```
 
-## 6. Add the db-password secret value
+## 7. Add the db-password secret value
 
-`db-secrets` only creates the secret container — the pipeline never writes a value to it (so
-the value never lands in Terraform state). Add one out-of-band, with your own credentials —
-`--data-file=-` reads the value from stdin instead of a file on disk, so it never touches shell
-history either:
+- `db-secrets` only creates the secret container — the pipeline never writes a value to it (so
+  the value never lands in Terraform state).
+- Add one out-of-band, with your own credentials.
+- `--data-file=-` reads the value from stdin instead of a file on disk, so it never touches
+  shell history either:
 
 ```bash
 echo -n "<the actual db password>" | gcloud secrets versions add db-password --project=yeti-504903 --data-file=-
@@ -63,13 +104,19 @@ Or from a file (e.g. one already used to seed the database itself):
 gcloud secrets versions add db-password --project=yeti-504903 --data-file=./db-password.txt
 ```
 
-## 7. Verify the deployment-failure-alert email channel
+## 8. Verify the deployment-failure-alert email channel
 
-Terraform creates the email notification channel (`modules/deployment-failure-alert`) but
-cannot verify it — Google requires a code sent to the actual inbox, and gcloud has no
-`send-verification-code`/`verify` subcommand, so this is a one-time manual REST call. Skip this
-and the channel silently drops every notification with no error anywhere (alert policy still
-shows `enabled: true`, no Terraform/pipeline failure).
+- Terraform creates the email notification channel (`modules/deployment-failure-alert`) but
+  cannot verify it — Google requires a code sent to the actual inbox.
+- gcloud has no `send-verification-code`/`verify` subcommand, so this is a one-time manual
+  REST call.
+- Skip this and the channel silently drops every notification with no error anywhere (alert
+  policy still shows `enabled: true`, no Terraform/pipeline failure).
+- Needs the `alpha` gcloud component:
+
+```bash
+gcloud components install alpha --quiet
+```
 
 ```bash
 CHANNEL=$(gcloud alpha monitoring channels list --project=yeti-504903 \
@@ -90,14 +137,18 @@ gcloud alpha monitoring channels describe "$CHANNEL" --format='value(verificatio
 # should print VERIFIED
 ```
 
-Re-run whenever the channel is recreated (e.g. `terraform destroy`/`apply` on `live/invoice-sync`,
-or a `notification_email` change — Terraform's `google_monitoring_notification_channel` replaces
-the channel on some field changes, resetting verification).
+- Re-run whenever the channel is recreated, e.g. `terraform destroy`/`apply` on
+  `live/invoice-sync`.
+- Also re-run after a `notification_email` change — Terraform's
+  `google_monitoring_notification_channel` replaces the channel on some field changes,
+  resetting verification.
 
-## 8. Force a test deployment failure
+## 9. Force a test deployment failure
 
-Exercises the alert end to end without touching Terraform-managed resources — see
-`live/invoice-sync/variables.tf`'s `expected_db_password` and `app/server.js`'s `/readyz`.
+- Exercises the alert end to end without touching Terraform-managed resources — see
+  `live/invoice-sync/variables.tf`'s `expected_db_password` and `app/server.js`'s `/readyz`.
+- The value below must match `expected_db_password` in `live/invoice-sync/.auto.tfvars` —
+  check that file first, since it's stack-specific config, not a fixed value.
 
 ```bash
 # Break it: set db-password to something other than expected_db_password
@@ -106,11 +157,12 @@ gcloud secrets versions add db-password --project=yeti-504903 \
   --data-file=<(printf '%s' "deliberately-wrong-value")
 
 # Push any commit to main to deploy a new revision — /readyz will 503 forever, the
-# revision never becomes Ready, and the alert (once its channel is verified, step 7) fires.
+# revision never becomes Ready, and the alert (once its channel is verified, step 8) fires.
 
-# Fix it: restore the real value so the next deploy succeeds
+# Fix it: restore the real value so the next deploy succeeds — read it from
+# live/invoice-sync/.auto.tfvars's expected_db_password, don't hardcode it here
 gcloud secrets versions add db-password --project=yeti-504903 \
-  --data-file=<(printf '%s' "invoice-sync-test-password")
+  --data-file=<(printf '%s' "<expected_db_password from .auto.tfvars>")
 ```
 
 ## Checks
