@@ -61,33 +61,16 @@ any order) → docker build → docker push → `invoice-sync` (apply). All thre
 `artifact-registry`, `network` and `db-secrets` run every time — idempotent, a no-op once they
 exist — so each self-heals on the next push if deleted, without a separate manual step.
 
-This means the deploy SA needs, project-wide and unconditioned:
-- `roles/run.admin` — Cloud Run's `Service` resource has no `resource.name`-based IAM
-  Conditions at all (Google's own docs: "Supports IAM Conditions: No"). A scoped condition here
-  looked correct and silently denied every request; see CLAUDE.md's IAM section.
-- `roles/artifactregistry.admin` (not `.repoAdmin`/`.writer`, neither of which grant
-  `repositories.create`/`.delete`) — Artifact Registry has no `resource.name`-based IAM
-  Conditions at all, only Resource Manager tags, a different mechanism.
-- `roles/compute.networkAdmin`, `roles/compute.securityAdmin` (firewall rules aren't covered by
-  `networkAdmin`) and `roles/vpcaccess.admin`, for `network`'s VPC/subnet/firewall/connector.
-  This is a materially bigger blast radius than everything else here: `yeti-504903` also hosts
-  the `google-cloud-terraform` repo's hub/dev VPCs, so the deploy SA can touch that networking
-  too, not just this repo's own. Accepted as a discussed trade-off — see CLAUDE.md's IAM section.
-- `roles/pubsub.editor` (not `.admin`), for `deployment_alert`'s Pub/Sub topic.
-- `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`, so `invoice-sync`
-  can grant the Cloud Run runtime SA it creates its own project roles
-  (`logging.logWriter`/`cloudtrace.agent`) and the deploy SA's own `iam.serviceAccountUser`
-  (actAs) grant on it, in the same pipeline run. Neither can be scoped down to "only this one
-  grant" — `projectIamAdmin` can rewrite the entire project's IAM policy, and
-  `serviceAccountAdmin` can set IAM policy on every service account in the project, not just
-  this one. A discussed, accepted trade-off in place of a separate manually-applied bootstrap
-  stack. See CLAUDE.md's IAM section.
-- `roles/secretmanager.admin`, so `db-secrets` can create the `db-password` secret and manage
-  IAM policy on it entirely from the pipeline — `secretmanager.secrets.create` is authorized
-  against the project, not the not-yet-existing secret, so it can't be scoped to one secret in
-  advance either. Runtime access is unaffected: the Cloud Run runtime SA still only gets
-  `roles/secretmanager.secretAccessor` scoped per-secret via `modules/cloud-run`'s
-  `secret_accessor_secrets`, never a project-wide role.
+This means the deploy SA needs, project-wide and unconditioned: nine custom roles (one per
+service group — Compute/Network, Load Balancer, Cloud Run, Artifact Registry, Secret Manager,
+Cloud KMS, Pub/Sub, Monitoring, Logging — plus IAM/service-account management), each holding
+only the specific permissions this repo's Terraform (and the pipeline's `docker push`/Cloud
+Run deploy-time image read) actually exercises, not a bundled predefined role. See
+`modules/github-actions-wif/main.tf`'s `google_project_iam_custom_role.*` resources for the
+exact permission lists, and CLAUDE.md's IAM section for the full rationale — why each is still
+project-wide/unconditioned despite the narrower permission sets, which services' async APIs
+need an `*.operations.get` grant on top of resource CRUD, and the confirmed IAM-Conditions gaps
+for Cloud Run/Artifact Registry/Pub-Sub.
 
 `enable-apis` is deliberately kept local-only, unlike `artifact-registry`/`network` — see
 CLAUDE.md's IAM section for why.
