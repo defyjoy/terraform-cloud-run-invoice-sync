@@ -1,0 +1,62 @@
+name: Terraform checks
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      - name: terraform fmt -check
+        run: task fmt-check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      - name: tflint --recursive
+        run: task lint
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+
+      # Each stack is initialized with -backend=false (see Taskfile.yml's validate task) —
+      # this only downloads providers from the registry to check config validity, no GCP
+      # auth, no state bucket access, so it needs neither WIF nor the id-token permission
+      # the deploy workflow uses.
+      - name: terraform validate (every root module)
+        run: task validate

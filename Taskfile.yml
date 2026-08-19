@@ -9,6 +9,11 @@ vars:
   ROOT: live
   STATE_BUCKET: '{{.STATE_BUCKET | default "yeti-terraform-state-bucket"}}'
 
+includes:
+  tf:
+    taskfile: ./tasks/tf.yml
+    internal: true
+
 tasks:
   default:
     desc: List available tasks
@@ -18,37 +23,37 @@ tasks:
   enable-apis:
     desc: 'Service APIs this repo needs across the project — bootstrap only, applied locally, never by the pipeline (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/enable-apis' }
 
   github-actions-wif:
     desc: 'GitHub Actions deploy identity (WIF pool/provider/service account) — bootstrap only, apply this locally before the pipeline can run anything else (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/github-actions-wif' }
 
   artifact-registry:
     desc: 'invoice-sync Artifact Registry repo — applied by the pipeline ahead of docker push, or locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/artifact-registry' }
 
   network:
     desc: 'VPC, Serverless VPC Access connector and firewall rule for invoice-sync — applied by the pipeline ahead of invoice-sync, or locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/network' }
 
   db-secrets:
     desc: 'db-password Secret Manager secret container (no version — add the value out-of-band) — applied by the pipeline ahead of invoice-sync, or locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/db-secrets' }
 
   invoice-sync:
     desc: 'invoice-sync Cloud Run service, load balancer and failure alerting — normally applied by the pipeline, not locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
-      - task: _tf
+      - task: tf:_tf
         vars: { DIR: '{{.ROOT}}/invoice-sync' }
 
   fmt:
@@ -56,41 +61,22 @@ tasks:
     cmds:
       - terraform fmt -recursive .
 
+  fmt-check:
+    desc: Check Terraform formatting without writing changes (CI)
+    cmds:
+      - terraform fmt -check -recursive .
+
+  lint:
+    desc: Lint every root module with tflint
+    cmds:
+      - tflint --recursive --config="$(pwd)/.tflint.hcl"
+
   validate:
-    desc: Validate every root module
+    desc: Validate every root module (initializes providers locally, no backend/state access)
     cmds:
       - |
         for component in enable-apis github-actions-wif artifact-registry network db-secrets invoice-sync; do
           echo "==> $component"
+          terraform -chdir={{.ROOT}}/$component init -input=false -backend=false
           terraform -chdir={{.ROOT}}/$component validate
         done
-
-  _tf:
-    internal: true
-    requires:
-      vars: [DIR]
-    vars:
-      # apply and destroy prompt for confirmation; plan has no such flag.
-      # Set AUTO_APPROVE=false to get the interactive prompt back.
-      APPROVE: '{{if and (ne .ACTION "plan") (ne .AUTO_APPROVE "false")}}-auto-approve{{end}}'
-    preconditions:
-      - sh: 'case "{{.ACTION}}" in plan|apply|destroy) exit 0 ;; *) exit 1 ;; esac'
-        msg: 'ACTION must be plan, apply or destroy (got "{{.ACTION}}")'
-    cmds:
-      - |
-        terraform -chdir={{.DIR}} init -input=false -reconfigure \
-          -backend-config="bucket={{.STATE_BUCKET}}" \
-          -backend-config="prefix={{.PROJECT_ID}}/{{.DIR}}"
-      - |
-        {{if eq .ACTION "plan"}}
-        terraform -chdir={{.DIR}} plan -input=false -out=tfplan {{.CLI_ARGS}}
-        {{else if eq .ACTION "apply"}}
-        if [ -f {{.DIR}}/tfplan ]; then
-          echo "Applying saved plan {{.DIR}}/tfplan (no -var accepted here — it was fixed at plan time)"
-          terraform -chdir={{.DIR}} apply -input=false tfplan
-        else
-          terraform -chdir={{.DIR}} apply -input=false {{.APPROVE}} {{.CLI_ARGS}}
-        fi
-        {{else}}
-        terraform -chdir={{.DIR}} destroy -input=false {{.APPROVE}} {{.CLI_ARGS}}
-        {{end}}

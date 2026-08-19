@@ -48,6 +48,12 @@ Rules for working on this repo's Terraform. These override default behavior.
   `_tf` pattern (`init` with `-backend-config bucket=`/`prefix=`, then `plan`/`apply`/`destroy`
   via `ACTION`). Don't hand-roll `terraform` invocations elsewhere (docs, scripts) when a task
   should exist instead.
+- `_tf` itself lives in `tasks/tf.yml`, included into `Taskfile.yml` under the `tf` namespace
+  (`includes: tf: {taskfile: ./tasks/tf.yml, internal: true}`) — call it as `task: tf:_tf`, not
+  `task: _tf`, from any task in the root `Taskfile.yml`. Global vars (`STATE_BUCKET`,
+  `PROJECT_ID`, `ACTION`, `AUTO_APPROVE`) declared in the root `Taskfile.yml` are still visible
+  inside the included file automatically — confirmed via `--dry --verbose`, not assumed — so
+  nothing needs re-declaring on the `tf:` side.
 
 ## CI/CD
 
@@ -56,7 +62,7 @@ Rules for working on this repo's Terraform. These override default behavior.
   GitHub repo via `attribute_condition`. Never a service account key file, never a broad WIF
   pool without a repo-scoped condition.
 - Pipelines call `task <name>` (install via `arduino/setup-task`), never raw `terraform
-  init`/`plan`/`apply`. The init/backend-config/apply sequence lives once, in `Taskfile.yml`'s
+  init`/`plan`/`apply`. The init/backend-config/apply sequence lives once, in `tasks/tf.yml`'s
   `_tf` task — a pipeline hand-rolling the same commands is exactly the duplication the Taskfile
   rule above exists to prevent, just one layer further out.
 - The backend bucket/prefix a pipeline needs are set via `PROJECT_ID`/`STATE_BUCKET` in the
@@ -79,7 +85,7 @@ Rules for working on this repo's Terraform. These override default behavior.
   through the stop-and-ask process in the IAM section first.
 - Every pipeline-applied stack goes through separate plan and apply jobs in `deploy.yml`, never
   a single `ACTION=apply` step — `ACTION=plan task <name>` first, saving a `tfplan` file
-  (`Taskfile.yml`'s `_tf`, when `ACTION=plan`, always runs `terraform plan -out=tfplan`), then
+  (`tasks/tf.yml`'s `_tf`, when `ACTION=plan`, always runs `terraform plan -out=tfplan`), then
   `actions/upload-artifact`/`download-artifact` to carry that exact file into a separate `needs:`
   job, then `ACTION=apply task <name>` there — `_tf`'s apply branch runs `terraform apply
   tfplan` (no re-plan, no `-var`) whenever that file is present, only falling back to a plain
