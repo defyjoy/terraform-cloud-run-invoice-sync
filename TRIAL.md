@@ -77,9 +77,9 @@ What I would solve by myself -
 
 
 What I would escalate to cloud lead - 
-- A organizational policy causing deny effect on service account permission 
-- Refuse and escalate any permission requirements across organization to individual users
-- Adding broader permission role ( with a recommedation with a custom role instead)
+- A organizational policy causing deny effect on service account permission and if we allow permission , it breaks cloud security model.
+- Refuse and escalate any permission requirements across organization to individual users.
+- Adding broader permission role ( with a recommedation with a custom role instead).
 
 
 In short If I can determine the root cause I can investigate independently without touching organizational policies , I would resolve it myself . 
