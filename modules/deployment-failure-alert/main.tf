@@ -36,7 +36,7 @@ resource "google_monitoring_alert_policy" "revision_failed" {
         resource.type="cloud_run_revision"
         resource.labels.service_name="${var.service_name}"
         severity=ERROR
-        textPayload:"Ready condition status changed to False"
+        protoPayload.status.message:"Ready condition status changed to False"
       EOT
     }
   }

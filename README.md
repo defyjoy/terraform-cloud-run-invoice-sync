@@ -135,10 +135,57 @@ that this project doesn't enable by default.
 ## Deployment failure alerting
 
 `modules/deployment-failure-alert` watches Cloud Run's own log line for a revision that never
-went healthy (`Ready condition status changed to False`) via a log-based Cloud Monitoring alert
-policy, and notifies two channels in parallel: a Pub/Sub topic (`deployment-failures`, for any
-future automation that wants to subscribe) and an email address (`notification_email` in
-`.auto.tfvars`).
+went healthy (`Ready condition status changed to False`, which lands in
+`protoPayload.status.message` on a `cloudaudit.googleapis.com/system_event` entry, not
+`textPayload`) via a log-based Cloud Monitoring alert policy, and notifies two channels in
+parallel: a Pub/Sub topic (`deployment-failures`, for any future automation that wants to
+subscribe) and an email address (`notification_email` in `.auto.tfvars`).
+
+### Runbook: verify the email notification channel
+
+Terraform creates the email channel but cannot verify it — Google requires a code sent to the
+actual inbox, and gcloud has no `send-verification-code`/`verify` subcommand, so this is a
+one-time manual REST call. Skip this and the channel silently drops every notification with no
+error anywhere (alert policy still shows `enabled: true`, no Terraform/pipeline failure).
+
+```bash
+CHANNEL=$(gcloud alpha monitoring channels list --project=yeti-504903 \
+  --filter='displayName:"deployment failures (email)"' --format='value(name)')
+
+TOKEN=$(gcloud auth print-access-token)
+
+# 1. Send the code — lands in the address configured as notification_email
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://monitoring.googleapis.com/v3/${CHANNEL}:sendVerificationCode" -d '{}'
+
+# 2. Verify with the code from that email
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://monitoring.googleapis.com/v3/${CHANNEL}:verify" -d '{"code":"<code-from-email>"}'
+
+# 3. Confirm
+gcloud alpha monitoring channels describe "$CHANNEL" --format='value(verificationStatus)'
+# should print VERIFIED
+```
+
+Re-run whenever the channel is recreated (e.g. `terraform destroy`/`apply` on `live/invoice-sync`,
+or a `notification_email` change — Terraform's `google_monitoring_notification_channel` replaces
+the channel on some field changes, resetting verification).
+
+### Runbook: force a test failure
+
+```bash
+# Break it: set db-password to something other than expected_db_password
+# (live/invoice-sync/.auto.tfvars)
+gcloud secrets versions add db-password --project=yeti-504903 \
+  --data-file=<(printf '%s' "deliberately-wrong-value")
+
+# Push any commit to main to deploy a new revision — /readyz will 503 forever, the
+# revision never becomes Ready, and the alert (once its channel is verified) fires.
+
+# Fix it: restore the real value so the next deploy succeeds
+gcloud secrets versions add db-password --project=yeti-504903 \
+  --data-file=<(printf '%s' "invoice-sync-test-password")
+```
 
 ## Private Cloud Run behind a public load balancer
 
