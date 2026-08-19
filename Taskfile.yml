@@ -39,6 +39,12 @@ tasks:
       - task: _tf
         vars: { DIR: '{{.ROOT}}/network' }
 
+  db-secrets:
+    desc: 'db-password Secret Manager secret container (no version — add the value out-of-band) — applied by the pipeline ahead of invoice-sync, or locally (ACTION=plan|apply|destroy, default plan)'
+    cmds:
+      - task: _tf
+        vars: { DIR: '{{.ROOT}}/db-secrets' }
+
   invoice-sync:
     desc: 'invoice-sync Cloud Run service, load balancer and failure alerting — normally applied by the pipeline, not locally (ACTION=plan|apply|destroy, default plan)'
     cmds:
@@ -54,7 +60,7 @@ tasks:
     desc: Validate every root module
     cmds:
       - |
-        for component in enable-apis github-actions-wif artifact-registry network invoice-sync; do
+        for component in enable-apis github-actions-wif artifact-registry network db-secrets invoice-sync; do
           echo "==> $component"
           terraform -chdir={{.ROOT}}/$component validate
         done

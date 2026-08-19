@@ -21,3 +21,5 @@ runtime_service_account_project_roles = [
   "roles/logging.logWriter",
   "roles/cloudtrace.agent",
 ]
+
+db_password_secret_id = "db-password"

@@ -109,6 +109,18 @@ locals {
       role      = "roles/resourcemanager.projectIamAdmin"
       condition = null
     }
+
+    # Project-wide: secretmanager.secrets.create is authorized against the project (the
+    # parent), not the not-yet-existing secret, so this can't be scoped to one secret in
+    # advance — same class of gap as project_iam_admin above. Lets ../db-secrets create the
+    # db-password secret and manage IAM policy on any secret in the project from the pipeline,
+    # not just this one. Only enable-apis and github-actions-wif stay manually applied — every
+    # other live/* stack, including db-secrets, is pipeline-applied; see CLAUDE.md's IAM
+    # section.
+    secretmanager_admin = {
+      role      = "roles/secretmanager.admin"
+      condition = null
+    }
   }
 }
 

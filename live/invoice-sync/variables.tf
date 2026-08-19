@@ -72,3 +72,8 @@ variable "runtime_service_account_project_roles" {
   description = "Project-level IAM roles granted to the Cloud Run runtime SA, e.g. [\"roles/logging.logWriter\"]. Granted directly by this stack via ../github-actions-wif's project-wide roles/resourcemanager.projectIamAdmin grant."
   type        = list(string)
 }
+
+variable "db_password_secret_id" {
+  description = "ID of the db-password secret, created by ../db-secrets (not by this stack). The runtime SA is granted roles/secretmanager.secretAccessor on it, scoped to just this secret, via ../db-secrets' own grant of roles/secretmanager.admin (scoped to just this secret) to the deploy SA. Must match ../db-secrets' own db_password_secret_id."
+  type        = string
+}

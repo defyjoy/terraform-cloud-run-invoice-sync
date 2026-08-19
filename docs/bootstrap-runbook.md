@@ -1,6 +1,8 @@
 # Bootstrap runbook
 
 One-liners for the manual steps that have to happen outside Terraform/the pipeline, in order.
+Only `enable-apis` and `github-actions-wif` are ever applied by hand — every other `live/*`
+stack is applied by the pipeline (see CLAUDE.md's CI/CD section).
 
 ## 1. Enable Cloud Resource Manager (once, before anything else)
 
@@ -34,30 +36,23 @@ gh variable set WIF_PROVIDER --body "$(terraform -chdir=live/github-actions-wif 
 gh variable set DEPLOY_SA_EMAIL --body "$(terraform -chdir=live/github-actions-wif output -raw service_account_email)"
 ```
 
-## 5. Trigger the pipeline once, expect it to fail
+## 5. Trigger the pipeline
 
-Creates the runtime SA (`iam.serviceAccountCreator` is enough for that) but can't yet deploy
-Cloud Run with it — that needs step 6 first. The SA existing is all this step needs.
+Creates the runtime SA, grants it its own project roles and the deploy SA's actAs on it,
+creates the `db-password` secret container, and deploys `invoice-sync` end to end, all in one
+run.
 
 ```bash
 git commit --allow-empty -m "bootstrap: trigger first pipeline run" && git push
 ```
 
-## 6. Apply `invoice-sync-runtime-sa` locally
+## 6. Add the db-password secret value
 
-The pipeline never applies this stack (granting roles to a service account needs project-wide
-or service-account-wide IAM-editing power that can't be scoped down — see CLAUDE.md's IAM
-section), and it grants roles to the SA step 5 created rather than creating it itself, so it
-must run after step 5. Re-run by hand whenever the runtime SA's roles change.
+`db-secrets` only creates the secret container — the pipeline never writes a value to it (so
+the value never lands in Terraform state). Add one out-of-band, with your own credentials:
 
 ```bash
-ACTION=apply task invoice-sync-runtime-sa
-```
-
-## 7. Re-run the pipeline
-
-```bash
-gh workflow run deploy.yml
+gcloud secrets versions add db-password --project=yeti-504903 --data-file=<path-to-password-file>
 ```
 
 ## Checks

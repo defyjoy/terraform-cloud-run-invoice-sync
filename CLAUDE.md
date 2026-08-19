@@ -56,6 +56,18 @@ Rules for working on this repo's Terraform. These override default behavior.
   second literal `-backend-config` string in the workflow. This can't be done via `TF_VAR_*`
   instead — that prefix only applies to declared root-module variables, never to backend
   blocks, which don't accept variables at all.
+- `live/enable-apis` and `live/github-actions-wif` are the **only** stacks ever applied
+  manually, with the operator's own credentials — `github-actions-wif` because it has to exist
+  before the pipeline can authenticate at all, `enable-apis` because `roles/serviceusage.*` has
+  no way to scope down to individual services (see the IAM section for both). Every other
+  `live/*` stack (`artifact-registry`, `network`, `db-secrets`, `invoice-sync`, and any new
+  stack added later) is applied by the pipeline, in `deploy.yml`, via its own `task <name>` —
+  never left as a manual/bootstrap-only step. If a new stack seems to need a manual step because
+  `github-deployer` doesn't yet hold the permission its resources require, the fix is to grant
+  `github-deployer` that permission (via `modules/github-actions-wif`'s `deploy_sa_roles`,
+  scoped as narrowly as the resource type allows — see the IAM section), not to carve out
+  another bootstrap-only stack. Any such grant that's project-wide and unconditioned still goes
+  through the stop-and-ask process in the IAM section first.
 
 ## IAM
 
@@ -142,27 +154,32 @@ Rules for working on this repo's Terraform. These override default behavior.
   can silently never match, an unverified condition here was judged not worth risking on infra
   with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
   confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.
-- `live/invoice-sync-runtime-sa` (the Cloud Run runtime SA's `roles/logging.logWriter`/
-  `roles/cloudtrace.agent` project roles, and the deploy SA's `roles/iam.serviceAccountUser`
-  grant on it — **not the account itself**, see below) is bootstrap-only, applied locally, and
-  never touched by the pipeline — same reasoning as `enable-apis`, one level further: granting
-  *any* role to a service account (via `google_project_iam_member` for the project roles, or
-  `google_service_account_iam_member` for the actAs grant) requires
-  `resourcemanager.projects.setIamPolicy` or `iam.serviceAccounts.setIamPolicy`, and neither can
-  be scoped down to "only this one grant" — `roles/resourcemanager.projectIamAdmin` is Google's
-  own narrowest role for the former, and it grants the ability to rewrite the *entire* project's
-  IAM policy (any role, to any member, including granting itself Owner). Confirmed via
-  `gcloud iam roles describe`, not assumed. This was an explicit, discussed trade-off — the
-  alternative (granting the deploy SA `projectIamAdmin` + `iam.serviceAccountAdmin`) was
-  rejected as too large a blast radius on a shared project.
-- Creating the runtime SA itself is a different, much narrower permission
-  (`iam.serviceAccounts.create`, via `roles/iam.serviceAccountCreator`) than granting it roles —
-  `../invoice-sync`'s `create_service_account = true` is fine for the pipeline to do; only the
-  *role-granting* half needs to live in the bootstrap-only stack above. Don't set
-  `create_service_account = false` again to "avoid" the IAM risk — that only forces
-  `invoice-sync-runtime-sa` into creating a second, competing account (or a fragile
-  cross-stack state migration) without removing any actual risk, since account creation was
-  never the risky part.
+- `github-deployer` holds `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`,
+  project-wide, so `../invoice-sync` can create the Cloud Run runtime SA, grant it its own
+  `roles/logging.logWriter`/`roles/cloudtrace.agent` project roles, and grant itself
+  `roles/iam.serviceAccountUser` (actAs) on it — all in the same pipeline run, no separate
+  bootstrap-only stack. This is a deliberate, discussed trade-off, not a default: neither role
+  can be scoped down to "only this one grant" — `projectIamAdmin` can rewrite the *entire*
+  project's IAM policy (any role, to any member, including granting itself Owner), and
+  `serviceAccountAdmin` can set IAM policy on *every* service account in the project, not just
+  the one `invoice-sync` creates. Confirmed via `gcloud iam roles describe`, not assumed. The
+  narrower alternative — a one-time, manually-applied bootstrap stack granting a scoped
+  `iam.serviceAccountAdmin` on just the runtime SA, and leaving the project roles as a manual
+  step — was proposed first and explicitly rejected in favor of a fully pipeline-driven deploy,
+  since only `enable-apis` and `github-actions-wif` are allowed to stay manual (see CI/CD
+  section). Don't revert to the narrower alternative without the same explicit discussion.
+- `github-deployer` holds `roles/secretmanager.admin`, project-wide, so `../db-secrets` can
+  create the `db-password` secret and manage IAM policy on it (and any other secret this repo
+  adds later) entirely from the pipeline. Same class of gap as `project_iam_admin` above:
+  `secretmanager.secrets.create` is authorized against the project (the parent), not the
+  not-yet-existing secret, so it can't be scoped to one secret in advance. The narrower
+  alternative — `db-secrets` as a manually-applied bootstrap stack granting a scoped
+  `secretmanager.admin` on just the one secret it creates (via
+  `modules/secret-manager-secret`'s `admin_members`, still available for a future caller that
+  needs it) — was the original design and was superseded once the "only `enable-apis` and
+  `github-actions-wif` are manual" rule was adopted. Runtime access to secrets is unaffected by
+  this: the Cloud Run runtime SA still only gets `roles/secretmanager.secretAccessor` scoped
+  per-secret via `modules/cloud-run`'s `secret_accessor_secrets`, never a project-wide role.
 - `roles/pubsub.editor` (`modules/github-actions-wif`'s `pubsub_editor`), for
   `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
   `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not

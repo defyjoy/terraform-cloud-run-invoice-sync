@@ -19,7 +19,14 @@ module "cloud_run" {
 
   service_account_users = ["serviceAccount:${var.deploy_account_id}@${var.project_id}.iam.gserviceaccount.com"]
 
-  secret_accessor_secrets = []
+  secret_accessor_secrets = [var.db_password_secret_id]
+
+  env_secret_vars = {
+    DB_PASSWORD = {
+      secret  = var.db_password_secret_id
+      version = "latest"
+    }
+  }
 
   min_instance_count = var.min_instance_count
   max_instance_count = var.max_instance_count
