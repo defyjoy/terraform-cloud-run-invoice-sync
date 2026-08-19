@@ -22,6 +22,15 @@ Rules for working on this repo's Terraform. These override default behavior.
   module that owns the concern it belongs to (or a new module, if none fits) and expose
   whatever variable/output makes it configurable from `live/`, rather than declaring it inline.
 
+## Comments
+
+- No comments in `.tf` files — not even to explain a non-obvious IAM/permissions choice.
+  `CLAUDE.md` is the single source of truth for the *why* behind this repo's Terraform
+  (rationale for custom roles, unconditioned project-wide grants, confirmed IAM Conditions
+  gaps, etc. all live in the IAM section below, not inline). This applies retroactively too:
+  when a file accumulates comments during a change, strip them at the end rather than leaving
+  them for "context," and fold anything genuinely load-bearing into this file instead.
+
 ## Variables
 
 - `live/*` root module variables have no `default`. Every value a stack actually runs with
@@ -113,11 +122,31 @@ Rules for working on this repo's Terraform. These override default behavior.
   just to let the pipeline self-heal newly-added APIs isn't worth that blast radius — if a new
   API is needed, add it to `live/enable-apis` and apply it locally, the same as any other
   bootstrap change.
-- Creating (not just writing to) an Artifact Registry repo needs `roles/artifactregistry.admin`
-  specifically — confirmed via `gcloud iam roles describe`: `.repoAdmin` has no
-  `repositories.create`/`.delete` at all (it's content/IAM management on a repo that already
-  exists), and `.writer` only grants push/pull. Don't reach for either when the caller is the
-  one provisioning the repo.
+- **`github-deployer`'s project-level roles are custom roles, one per service group, not
+  predefined roles** (`modules/github-actions-wif`'s `google_project_iam_custom_role.*`,
+  wired up via the `deploy_sa_roles` local). Predefined roles like `run.admin` (18
+  permissions), `artifactregistry.admin` (~50), `compute.networkAdmin`/`.securityAdmin`/
+  `.loadBalancerAdmin` (~1,586 combined), `secretmanager.admin` (~15), `cloudkms.admin`
+  (~40), `pubsub.admin` (~15), `logging.configWriter` (60) all bundle in capabilities this
+  repo never exercises (VPNs/interconnects/GKE networking, AR package/tag management, Secret
+  Manager version lifecycle, Pub/Sub subscriptions/schemas/snapshots, 59 of
+  `logging.configWriter`'s 60 permissions — this repo has zero `google_logging_*` resources).
+  Each custom role's permission list was derived from `gcloud iam list-testable-permissions`
+  against this project's actual deployed resources, not inferred from predefined-role
+  membership — that shortcut is what produced an earlier, much larger draft (~1,447
+  permissions) of this same change. Total across all nine custom roles is roughly 120-130
+  permissions. When a `live/` stack starts managing a new resource type, add the specific
+  permissions it needs to the relevant custom role (or a new one) — don't reach for a
+  predefined role as a shortcut, and don't add permissions "just in case" without a resource
+  in this repo that actually needs them (the one deliberate exception:
+  `githubDeployerLoadBalancer` includes `compute.sslCertificates.*` pre-emptively, since
+  `modules/serverless-lb`'s managed-cert code path already exists and is one `lb_domains`
+  tfvars edit away from being live).
+- Creating (not just writing to) an Artifact Registry repo needs
+  `artifactregistry.repositories.create`/`.delete` specifically — confirmed via `gcloud iam
+  roles describe`: the predefined `.repoAdmin` role has neither at all (it's content/IAM
+  management on a repo that already exists), and `.writer` only grants push/pull. Don't reach
+  for either when the caller is the one provisioning the repo.
 - A `create` call for a resource that doesn't exist yet is generally authorized against the
   *parent* (its location), not the resource's own `resource.name` — a single
   `resource.name == <child>` check would not be enough to let the deploy SA provision the
@@ -129,71 +158,108 @@ Rules for working on this repo's Terraform. These override default behavior.
   own "resource types with conditional role bindings" reference first.
 - **Cloud Run's `Service` resource does not support IAM Conditions at all** — confirmed against
   Google's Config Connector docs ("Supports IAM Conditions: No" for `RunService`), not assumed.
-  A `resource.name`-scoped condition on `run_admin` looked correct (it even matched
-  `run.services.create`'s own parent-location requirement) and still denied every request, the
-  exact same silent-no-op failure mode as Artifact Registry below. `run_admin` is granted
-  project-wide, unconditioned, for this reason.
+  A `resource.name`-scoped condition looked correct (it even matched `run.services.create`'s
+  own parent-location requirement) and still denied every request, the exact same silent-no-op
+  failure mode as Artifact Registry below. `githubDeployerCloudRun` is granted project-wide,
+  unconditioned, for this reason.
 - Artifact Registry has no `resource.name`/`resource.type`-based IAM Conditions at all — its only
   documented conditional-access mechanism is Resource Manager tags, a different feature. A
-  `resource.name`-scoped condition on `artifactregistry_admin` looked like it matched (the 403's
-  own error detail showed the exact resource name the condition checked for) and still denied
-  every request, because the condition attribute isn't evaluated for this resource type in the
-  first place — confirmed against Google's Artifact Registry access-control docs, not assumed.
-  `artifactregistry_admin` is granted project-wide, unconditioned, for this reason — don't
-  reintroduce a `resource.name` condition on it expecting it to narrow anything.
-- `roles/compute.networkAdmin`, `roles/compute.securityAdmin` and `roles/vpcaccess.admin`
-  (`modules/github-actions-wif`'s `compute_network_admin`/`compute_security_admin`/
-  `vpcaccess_admin`, needed for the pipeline to apply `live/network`) are granted project-wide,
-  unconditioned — a discussed, accepted trade-off, not a default. This is a materially bigger
-  blast radius than every other grant in this repo: `yeti-504903` also hosts the
-  `google-cloud-terraform` repo's hub/dev VPCs, GKE networking and VPN, so this lets the deploy
-  SA touch all of that, not just `live/network`'s own resources. Compute Engine's IAM
-  Conditions support isn't confirmed for networks/subnetworks/routers/firewalls specifically
-  (Google's supported-services list only says "Compute Engine" broadly), and given
-  `artifactregistry_admin` above already showed a condition that looks syntactically correct
-  can silently never match, an unverified condition here was judged not worth risking on infra
-  with this much more to lose if guessed wrong. If a narrower binding for these roles is ever
-  confirmed to actually work at runtime (not just accepted by `terraform apply`), prefer it.
-- `github-deployer` holds `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`,
-  project-wide, so `../invoice-sync` can create the Cloud Run runtime SA, grant it its own
-  `roles/logging.logWriter`/`roles/cloudtrace.agent` project roles, and grant itself
-  `roles/iam.serviceAccountUser` (actAs) on it — all in the same pipeline run, no separate
-  bootstrap-only stack. This is a deliberate, discussed trade-off, not a default: neither role
-  can be scoped down to "only this one grant" — `projectIamAdmin` can rewrite the *entire*
-  project's IAM policy (any role, to any member, including granting itself Owner), and
-  `serviceAccountAdmin` can set IAM policy on *every* service account in the project, not just
-  the one `invoice-sync` creates. Confirmed via `gcloud iam roles describe`, not assumed. The
-  narrower alternative — a one-time, manually-applied bootstrap stack granting a scoped
-  `iam.serviceAccountAdmin` on just the runtime SA, and leaving the project roles as a manual
-  step — was proposed first and explicitly rejected in favor of a fully pipeline-driven deploy,
-  since only `enable-apis` and `github-actions-wif` are allowed to stay manual (see CI/CD
-  section). Don't revert to the narrower alternative without the same explicit discussion.
-- `github-deployer` holds `roles/secretmanager.admin`, project-wide, so `../db-secrets` can
-  create the `db-password` secret and manage IAM policy on it (and any other secret this repo
-  adds later) entirely from the pipeline. Same class of gap as `project_iam_admin` above:
-  `secretmanager.secrets.create` is authorized against the project (the parent), not the
-  not-yet-existing secret, so it can't be scoped to one secret in advance. The narrower
-  alternative — `db-secrets` as a manually-applied bootstrap stack granting a scoped
+  `resource.name`-scoped condition looked like it matched (the 403's own error detail showed
+  the exact resource name the condition checked for) and still denied every request, because
+  the condition attribute isn't evaluated for this resource type in the first place —
+  confirmed against Google's Artifact Registry access-control docs, not assumed.
+  `githubDeployerArtifactRegistry` is granted project-wide, unconditioned, for this reason —
+  don't reintroduce a `resource.name` condition on it expecting it to narrow anything.
+- `githubDeployerComputeNetwork` (VPC/subnet/firewall/router/VPC-access-connector, needed for
+  the pipeline to apply `live/network`) and `githubDeployerLoadBalancer` (global external
+  HTTP(S) LB resources, needed for `../invoice-sync`'s `modules/serverless-lb`) are granted
+  project-wide, unconditioned — a discussed, accepted trade-off, not a default. This is a
+  materially bigger blast radius than every other grant in this repo: `yeti-504903` also hosts
+  the `google-cloud-terraform` repo's hub/dev VPCs, GKE networking and VPN, so this lets the
+  deploy SA touch all of that, not just this repo's own network/LB resources. Compute Engine's
+  IAM Conditions support isn't confirmed for these resource types specifically (Google's
+  supported-services list only says "Compute Engine" broadly), and given Artifact Registry
+  above already showed a condition that looks syntactically correct can silently never match,
+  an unverified condition here was judged not worth risking on infra with this much more to
+  lose if guessed wrong. Narrowing the *permission count* for these two roles (from
+  `compute.networkAdmin`/`.securityAdmin`/`.loadBalancerAdmin`'s ~1,586 combined permissions
+  down to ~70) doesn't change this trade-off — it's still project-wide, just fewer permission
+  types. If a narrower binding is ever confirmed to actually work at runtime (not just accepted
+  by `terraform apply`), prefer it.
+- `github-deployer` holds `githubDeployerIamServiceAccountMgmt`
+  (`iam.serviceAccounts.{create,get,list,update,getIamPolicy,setIamPolicy}`,
+  `resourcemanager.projects.{getIamPolicy,setIamPolicy}`), project-wide, so `../invoice-sync`
+  can create the Cloud Run runtime SA, grant it its own `roles/logging.logWriter`/
+  `roles/cloudtrace.agent` project roles, and grant itself `roles/iam.serviceAccountUser`
+  (actAs) on it — all in the same pipeline run, no separate bootstrap-only stack. This is a
+  deliberate, discussed trade-off, not a default, and narrowing the permission list (versus the
+  predefined `iam.serviceAccountAdmin`/`resourcemanager.projectIamAdmin` this replaced) doesn't
+  change the underlying risk: `setIamPolicy` at the project or service-account level is
+  inherently that broad regardless of which role wraps it — it can still rewrite IAM policy for
+  *any* member/role at the project level, or set IAM policy on *every* service account in the
+  project, not just the one `invoice-sync` creates. Confirmed via `gcloud iam roles describe`,
+  not assumed. The narrower alternative — a one-time, manually-applied bootstrap stack granting
+  a scoped `iam.serviceAccountAdmin` on just the runtime SA, and leaving the project roles as a
+  manual step — was proposed first and explicitly rejected in favor of a fully pipeline-driven
+  deploy, since only `enable-apis` and `github-actions-wif` are allowed to stay manual (see
+  CI/CD section). Don't revert to the narrower alternative without the same explicit
+  discussion.
+- `github-deployer` holds `githubDeployerSecretManager`
+  (`secretmanager.secrets.{create,get,update,getIamPolicy,setIamPolicy}`), project-wide, so
+  `../db-secrets` can create the `db-password` secret and manage IAM policy on it (and any
+  other secret this repo adds later) entirely from the pipeline. Same class of gap as
+  `githubDeployerIamServiceAccountMgmt` above: `secretmanager.secrets.create` is authorized
+  against the project (the parent), not the not-yet-existing secret, so it can't be scoped to
+  one secret in advance. Secret Manager is confirmed to support IAM Conditions (see the
+  `google_secret_manager_secret_iam_member` bullet above) — a `resource.name` condition scoped
+  to just `db-password` for the `getIamPolicy`/`setIamPolicy` half of this role is a plausible
+  future narrowing, but hasn't been tried/verified here yet, and Pub/Sub's identical-looking
+  condition attempt turned out to be a silent no-op (see below) — verify in isolation before
+  trusting it in the real pipeline. The narrower alternative to the current unconditioned
+  grant — `db-secrets` as a manually-applied bootstrap stack granting a scoped
   `secretmanager.admin` on just the one secret it creates (via
   `modules/secret-manager-secret`'s `admin_members`, still available for a future caller that
   needs it) — was the original design and was superseded once the "only `enable-apis` and
   `github-actions-wif` are manual" rule was adopted. Runtime access to secrets is unaffected by
   this: the Cloud Run runtime SA still only gets `roles/secretmanager.secretAccessor` scoped
   per-secret via `modules/cloud-run`'s `secret_accessor_secrets`, never a project-wide role.
-- `roles/pubsub.editor` (`modules/github-actions-wif`'s `pubsub_editor`), for
-  `../invoice-sync`'s `deployment_alert` module to create its Pub/Sub topic. Deliberately not
-  `.admin`: `.editor` grants `topics.create`/`get`/`list`/`update`/`delete`/`publish` but not
-  `setIamPolicy` on topics, which `.admin` also grants.
-- `github-deployer` holds `roles/cloudkms.admin`, project-wide, so `../db-secrets` (via
-  `modules/secret-manager-secret`) can create the CMEK key ring/key protecting the
-  `db-password` secret. Same class of gap as `secretmanager_admin` above:
-  `cloudkms.keyRings.create`/`.cryptoKeys.create` are authorized against the project/location,
-  not the not-yet-existing key ring, so this can't be scoped to just this one key ring in
-  advance, and Cloud KMS's IAM Conditions support for `KeyRing`/`CryptoKey` isn't confirmed —
-  same unverified-condition risk already documented for `artifactregistry_admin`/`run_admin`
-  above. A discussed, accepted trade-off, confirmed with the user before applying (see this
-  bullet's own stop-and-ask above): the deploy SA can manage any KMS key in the project, not
-  just this one. Runtime decryption is unaffected by this — Secret Manager's own service
-  identity (`google_project_service_identity` in `modules/secret-manager-secret`) does the
-  encrypt/decrypt on behalf of whoever holds `secretAccessor`, so the Cloud Run runtime SA never
-  needs any direct KMS grant of its own.
+- `github-deployer` holds `githubDeployerPubsub`
+  (`pubsub.topics.{create,get,update,getIamPolicy,setIamPolicy}`), project-wide, unconditioned
+  — covers both `../invoice-sync`'s `deployment_alert` module creating its Pub/Sub topic, and
+  `../db-secrets` granting the Secret Manager service agent publish rights on the
+  `db-password-rotation` topic it creates (`modules/secret-manager-secret`'s
+  `google_pubsub_topic_iam_member.secretmanager_can_publish_rotation`), which needs
+  `pubsub.topics.setIamPolicy`/`getIamPolicy` — permissions the predefined `pubsub.editor`/
+  `.publisher` roles both lack. `topics.publish` itself isn't included — the Secret Manager
+  service agent is what publishes rotation notifications, never `github-deployer`. A
+  `resource.name` condition scoped to just the `db-password-rotation` topic was tried first
+  (same reasoning as the Secret Manager case above: the topic name is deterministic even
+  before the topic exists) but confirmed to be a silent no-op — Pub/Sub Topic doesn't evaluate
+  `resource.name` conditions, the same failure mode already confirmed for Cloud Run and
+  Artifact Registry above. Confirmed with the user before applying.
+- `github-deployer` holds `githubDeployerKms`
+  (`cloudkms.keyRings.{create,get,list,getIamPolicy}`,
+  `cloudkms.cryptoKeys.{create,get,update,getIamPolicy,setIamPolicy}`), project-wide, so
+  `../db-secrets` (via `modules/secret-manager-secret`) can create the CMEK key ring/key
+  protecting the `db-password` secret. No `cryptoKeys.delete` — the key has
+  `lifecycle.prevent_destroy = true` and can't be truly deleted in GCP regardless. Same class
+  of gap as `githubDeployerSecretManager` above: `keyRings.create`/`cryptoKeys.create` are
+  authorized against the project/location, not the not-yet-existing key ring, so this can't be
+  scoped to just this one key ring in advance, and Cloud KMS's IAM Conditions support for
+  `KeyRing`/`CryptoKey` isn't confirmed — same unverified-condition risk already documented for
+  `githubDeployerArtifactRegistry`/`githubDeployerCloudRun` above. A discussed, accepted
+  trade-off, confirmed with the user before applying: the deploy SA can manage any KMS key in
+  the project, not just this one. Runtime decryption is unaffected by this — Secret Manager's
+  own service identity (`google_project_service_identity` in `modules/secret-manager-secret`)
+  does the encrypt/decrypt on behalf of whoever holds `secretAccessor`, so the Cloud Run
+  runtime SA never needs any direct KMS grant of its own.
+- `github-deployer` holds `githubDeployerMonitoring`
+  (`monitoring.notificationChannels.{create,get,update,delete,list}`,
+  `monitoring.alertPolicies.{create,get,update,delete,list}`) and `githubDeployerLogging`
+  (`logging.notificationRules.{create,get,update,delete,list}`), both project-wide, for
+  `../invoice-sync`'s `modules/deployment-failure-alert` (two notification channels — pubsub
+  and email — plus one alert policy). The logging permissions exist only because the alert
+  policy uses `condition_matched_log`, which routes creation through Cloud Logging's
+  log-based-alerting API and specifically needs `logging.notificationRules.create` — no
+  predefined role narrower than `logging.configWriter` (60 permissions, 59 unused) includes
+  it, and nothing else in this repo touches Cloud Logging.

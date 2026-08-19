@@ -36,97 +36,280 @@ module "deploy_service_account" {
 
 locals {
   deploy_sa_roles = {
-    run_admin = {
-      role      = "roles/run.admin"
+    compute_network = {
+      role      = google_project_iam_custom_role.compute_network.id
       condition = null
     }
 
-    artifactregistry_admin = {
-      role      = "roles/artifactregistry.admin"
+    load_balancer = {
+      role      = google_project_iam_custom_role.load_balancer.id
       condition = null
     }
 
-    compute_network_admin = {
-      role      = "roles/compute.networkAdmin"
+    cloud_run = {
+      role      = google_project_iam_custom_role.cloud_run.id
       condition = null
     }
 
-    compute_security_admin = {
-      role      = "roles/compute.securityAdmin"
+    artifact_registry = {
+      role      = google_project_iam_custom_role.artifact_registry.id
       condition = null
     }
 
-    vpcaccess_admin = {
-      role      = "roles/vpcaccess.admin"
+    secret_manager = {
+      role      = google_project_iam_custom_role.secret_manager.id
       condition = null
     }
 
-    pubsub_editor = {
-      role      = "roles/pubsub.editor"
+    kms = {
+      role      = google_project_iam_custom_role.kms.id
       condition = null
     }
 
-    # ../db-secrets needs to grant the Secret Manager service agent publish rights on the
-    # db-password-rotation topic it creates (modules/secret-manager-secret's
-    # google_pubsub_topic_iam_member.secretmanager_can_publish_rotation) — that's
-    # pubsub.topics.setIamPolicy, which pubsub_editor above deliberately excludes. Only
-    # roles/pubsub.admin includes it. Scoped via a resource.name condition to just this one
-    # topic rather than granting admin project-wide: the topic name is deterministic
-    # (projects/<id>/topics/db-password-rotation) even before it exists, the same reasoning
-    # CLAUDE.md's IAM section uses for Secret Manager. Unlike Secret Manager, Pub/Sub Topic's
-    # IAM Conditions support isn't confirmed here (Google's docs didn't clearly confirm or
-    # rule it out) — if this condition turns out to be a silent no-op like the Cloud Run/
-    # Artifact Registry cases, the fix is to drop the condition and accept pubsub.admin
-    # project-wide, not to add a second, different condition guess.
-    pubsub_rotation_topic_admin = {
-      role = "roles/pubsub.admin"
-      condition = {
-        title       = "db-password-rotation-topic-only"
-        description = "Only the db-password-rotation Pub/Sub topic, for setIamPolicy"
-        expression  = "resource.name == \"projects/${var.project_id}/topics/db-password-rotation\""
-      }
-    }
-
-    service_account_admin = {
-      role      = "roles/iam.serviceAccountAdmin"
+    pubsub = {
+      role      = google_project_iam_custom_role.pubsub.id
       condition = null
     }
 
-    project_iam_admin = {
-      role      = "roles/resourcemanager.projectIamAdmin"
+    monitoring = {
+      role      = google_project_iam_custom_role.monitoring.id
       condition = null
     }
 
-    secretmanager_admin = {
-      role      = "roles/secretmanager.admin"
+    logging = {
+      role      = google_project_iam_custom_role.logging.id
       condition = null
     }
 
-    monitoring_notification_channel_editor = {
-      role      = "roles/monitoring.notificationChannelEditor"
-      condition = null
-    }
-
-    monitoring_alert_policy_editor = {
-      role      = "roles/monitoring.alertPolicyEditor"
-      condition = null
-    }
-
-    logging_config_writer = {
-      role      = "roles/logging.configWriter"
-      condition = null
-    }
-
-    compute_load_balancer_admin = {
-      role      = "roles/compute.loadBalancerAdmin"
-      condition = null
-    }
-
-    cloudkms_admin = {
-      role      = "roles/cloudkms.admin"
+    iam_service_account_mgmt = {
+      role      = google_project_iam_custom_role.iam_service_account_mgmt.id
       condition = null
     }
   }
+}
+
+resource "google_project_iam_custom_role" "compute_network" {
+  project     = var.project_id
+  role_id     = "githubDeployerComputeNetwork"
+  title       = "GitHub Deployer - Compute Network"
+  description = "VPC/subnet/firewall/router/VPC-access-connector management for live/network."
+  stage       = "GA"
+  permissions = [
+    "compute.networks.create",
+    "compute.networks.get",
+    "compute.networks.update",
+    "compute.networks.use",
+    "compute.subnetworks.create",
+    "compute.subnetworks.get",
+    "compute.subnetworks.update",
+    "compute.subnetworks.use",
+    "compute.subnetworks.setPrivateIpGoogleAccess",
+    "compute.firewalls.create",
+    "compute.firewalls.get",
+    "compute.firewalls.update",
+    "compute.firewalls.delete",
+    "compute.routers.create",
+    "compute.routers.get",
+    "compute.routers.update",
+    "compute.routers.use",
+    "vpcaccess.connectors.create",
+    "vpcaccess.connectors.get",
+    "vpcaccess.connectors.update",
+    "vpcaccess.connectors.list",
+  ]
+}
+
+resource "google_project_iam_custom_role" "load_balancer" {
+  project     = var.project_id
+  role_id     = "githubDeployerLoadBalancer"
+  title       = "GitHub Deployer - Load Balancer"
+  description = "Global external HTTP(S) LB resources for modules/serverless-lb."
+  stage       = "GA"
+  permissions = [
+    "compute.regionNetworkEndpointGroups.create",
+    "compute.regionNetworkEndpointGroups.get",
+    "compute.regionNetworkEndpointGroups.delete",
+    "compute.regionNetworkEndpointGroups.use",
+    "compute.globalAddresses.create",
+    "compute.globalAddresses.get",
+    "compute.globalAddresses.delete",
+    "compute.globalAddresses.use",
+    "compute.globalAddresses.setLabels",
+    "compute.sslPolicies.create",
+    "compute.sslPolicies.get",
+    "compute.sslPolicies.update",
+    "compute.sslPolicies.delete",
+    "compute.sslPolicies.use",
+    "compute.sslCertificates.create",
+    "compute.sslCertificates.get",
+    "compute.sslCertificates.delete",
+    "compute.backendServices.create",
+    "compute.backendServices.get",
+    "compute.backendServices.update",
+    "compute.backendServices.delete",
+    "compute.backendServices.use",
+    "compute.backendServices.setSecurityPolicy",
+    "compute.urlMaps.create",
+    "compute.urlMaps.get",
+    "compute.urlMaps.update",
+    "compute.urlMaps.delete",
+    "compute.urlMaps.use",
+    "compute.urlMaps.validate",
+    "compute.targetHttpProxies.create",
+    "compute.targetHttpProxies.get",
+    "compute.targetHttpProxies.update",
+    "compute.targetHttpProxies.delete",
+    "compute.targetHttpProxies.use",
+    "compute.targetHttpProxies.setUrlMap",
+    "compute.targetHttpsProxies.create",
+    "compute.targetHttpsProxies.get",
+    "compute.targetHttpsProxies.update",
+    "compute.targetHttpsProxies.delete",
+    "compute.targetHttpsProxies.use",
+    "compute.targetHttpsProxies.setUrlMap",
+    "compute.targetHttpsProxies.setSslPolicy",
+    "compute.targetHttpsProxies.setSslCertificates",
+    "compute.globalForwardingRules.create",
+    "compute.globalForwardingRules.get",
+    "compute.globalForwardingRules.update",
+    "compute.globalForwardingRules.delete",
+    "compute.globalForwardingRules.setTarget",
+    "compute.globalForwardingRules.setLabels",
+  ]
+}
+
+resource "google_project_iam_custom_role" "cloud_run" {
+  project     = var.project_id
+  role_id     = "githubDeployerCloudRun"
+  title       = "GitHub Deployer - Cloud Run"
+  description = "Cloud Run service management for modules/cloud-run."
+  stage       = "GA"
+  permissions = [
+    "run.services.create",
+    "run.services.get",
+    "run.services.update",
+    "run.services.delete",
+    "run.services.getIamPolicy",
+    "run.services.setIamPolicy",
+  ]
+}
+
+resource "google_project_iam_custom_role" "artifact_registry" {
+  project     = var.project_id
+  role_id     = "githubDeployerArtifactRegistry"
+  title       = "GitHub Deployer - Artifact Registry"
+  description = "Repository management for modules/artifact-registry."
+  stage       = "GA"
+  permissions = [
+    "artifactregistry.repositories.create",
+    "artifactregistry.repositories.get",
+    "artifactregistry.repositories.update",
+    "artifactregistry.repositories.delete",
+    "artifactregistry.repositories.getIamPolicy",
+    "artifactregistry.repositories.setIamPolicy",
+  ]
+}
+
+resource "google_project_iam_custom_role" "secret_manager" {
+  project     = var.project_id
+  role_id     = "githubDeployerSecretManager"
+  title       = "GitHub Deployer - Secret Manager"
+  description = "Secret container management for modules/secret-manager-secret."
+  stage       = "GA"
+  permissions = [
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.update",
+    "secretmanager.secrets.getIamPolicy",
+    "secretmanager.secrets.setIamPolicy",
+  ]
+}
+
+resource "google_project_iam_custom_role" "kms" {
+  project     = var.project_id
+  role_id     = "githubDeployerKms"
+  title       = "GitHub Deployer - Cloud KMS"
+  description = "CMEK key ring/key management for modules/secret-manager-secret."
+  stage       = "GA"
+  permissions = [
+    "cloudkms.keyRings.create",
+    "cloudkms.keyRings.get",
+    "cloudkms.keyRings.list",
+    "cloudkms.keyRings.getIamPolicy",
+    "cloudkms.cryptoKeys.create",
+    "cloudkms.cryptoKeys.get",
+    "cloudkms.cryptoKeys.update",
+    "cloudkms.cryptoKeys.getIamPolicy",
+    "cloudkms.cryptoKeys.setIamPolicy",
+  ]
+}
+
+resource "google_project_iam_custom_role" "pubsub" {
+  project     = var.project_id
+  role_id     = "githubDeployerPubsub"
+  title       = "GitHub Deployer - Pub/Sub"
+  description = "Topic management for modules/secret-manager-secret and modules/deployment-failure-alert."
+  stage       = "GA"
+  permissions = [
+    "pubsub.topics.create",
+    "pubsub.topics.get",
+    "pubsub.topics.update",
+    "pubsub.topics.getIamPolicy",
+    "pubsub.topics.setIamPolicy",
+  ]
+}
+
+resource "google_project_iam_custom_role" "monitoring" {
+  project     = var.project_id
+  role_id     = "githubDeployerMonitoring"
+  title       = "GitHub Deployer - Monitoring"
+  description = "Notification channel and alert policy management for modules/deployment-failure-alert."
+  stage       = "GA"
+  permissions = [
+    "monitoring.notificationChannels.create",
+    "monitoring.notificationChannels.get",
+    "monitoring.notificationChannels.update",
+    "monitoring.notificationChannels.delete",
+    "monitoring.notificationChannels.list",
+    "monitoring.alertPolicies.create",
+    "monitoring.alertPolicies.get",
+    "monitoring.alertPolicies.update",
+    "monitoring.alertPolicies.delete",
+    "monitoring.alertPolicies.list",
+  ]
+}
+
+resource "google_project_iam_custom_role" "logging" {
+  project     = var.project_id
+  role_id     = "githubDeployerLogging"
+  title       = "GitHub Deployer - Logging"
+  description = "Log-based-alerting notification rule needed by modules/deployment-failure-alert."
+  stage       = "GA"
+  permissions = [
+    "logging.notificationRules.create",
+    "logging.notificationRules.get",
+    "logging.notificationRules.update",
+    "logging.notificationRules.delete",
+    "logging.notificationRules.list",
+  ]
+}
+
+resource "google_project_iam_custom_role" "iam_service_account_mgmt" {
+  project     = var.project_id
+  role_id     = "githubDeployerIamServiceAccountMgmt"
+  title       = "GitHub Deployer - IAM Service Account Management"
+  description = "Runtime SA creation/actAs and its project-role grants for modules/cloud-run."
+  stage       = "GA"
+  permissions = [
+    "iam.serviceAccounts.create",
+    "iam.serviceAccounts.get",
+    "iam.serviceAccounts.list",
+    "iam.serviceAccounts.update",
+    "iam.serviceAccounts.getIamPolicy",
+    "iam.serviceAccounts.setIamPolicy",
+    "resourcemanager.projects.getIamPolicy",
+    "resourcemanager.projects.setIamPolicy",
+  ]
 }
 
 resource "google_project_iam_member" "deploy_sa_roles" {
