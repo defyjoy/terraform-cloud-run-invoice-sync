@@ -62,3 +62,17 @@ jobs:
 
       - name: Deploy invoice-sync
         run: ACTION=apply task invoice-sync -- -var image_tag=${{ github.sha }}
+
+      # Read-only `terraform output`, not init/plan/apply, so it doesn't go through the
+      # Taskfile _tf pattern (see CLAUDE.md) — task invoice-sync above already left
+      # live/invoice-sync initialized against the right backend in this same job.
+      - name: Summarize invoice-sync outputs
+        run: |
+          {
+            echo "## invoice-sync deploy"
+            echo
+            echo "| Output | Value |"
+            echo "|---|---|"
+            terraform -chdir=live/invoice-sync output -json \
+              | jq -r 'to_entries[] | "| \(.key) | \(.value.value) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
